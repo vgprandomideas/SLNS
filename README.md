@@ -10,6 +10,13 @@ An end-to-end starter platform for a silk textile business, aligned to the suppl
 - Immutable-style transaction APIs for material receipt, finished-goods receipt and sales-order reservation.
 - Stock availability calculated from on-hand less reserved quantities.
 - JSON persistence for local development and a clear API boundary for future PostgreSQL, GST, banking, logistics and messaging adapters.
+- Blueprint coverage view that maps the supplied operating model, canonical business flow, modules, principles and phased roadmap into the application.
+
+## API surface
+
+Read models are exposed under `/api`: `blueprint`, `masters`, `summary`, `products`, `costing`, `orders`, `procurement`, `production`, `quality`, `stock-movements`, `logistics`, `finance`, `ledger`, `workflows`, `alerts`, `events` and `audit`.
+
+Write transactions are exposed under `/api/actions`: `receive`, `material-issue`, `production`, `order`, `invoice`, `dispatch`, `receipt`, `qc`, `approve`, `transfer` and `return`. Each write creates a transaction reference, updates the relevant operational state and appends an audit/event record.
 
 ## Run locally
 

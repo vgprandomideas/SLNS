@@ -58,13 +58,62 @@ function seedStore() {
       { id: "EVT-3", type: "RECEIPT", title: "Material receipt posted", detail: "20 kg Mulberry silk yarn", user: "Priya N.", occurredAt: "2026-09-14T03:50:00.000Z" },
       { id: "EVT-4", type: "ALERT", title: "Purchase order overdue", detail: "Mysore Silk Co-op · PO-2026-0088", user: "Workflow", occurredAt: "2026-09-14T03:20:00.000Z" }
     ],
-    audit: []
+    audit: [],
+    locations: [
+      { id: "BIN-BLR-A1", warehouse: "Bengaluru HQ", zone: "Finished goods", rack: "A", bin: "A1", state: "Finished goods" },
+      { id: "BIN-BLR-R1", warehouse: "Bengaluru HQ", zone: "Raw materials", rack: "R", bin: "R1", state: "Raw material" },
+      { id: "BIN-KAN-W1", warehouse: "Kanchipuram Workshop", zone: "WIP", rack: "W", bin: "W1", state: "WIP" }
+    ],
+    qualityInspections: [
+      { id: "QC-2026-0042", reference: "PO-2026-0017", product: "Banarasi Midnight Bloom", type: "Production", status: "Awaiting QC", inspector: "Ravi K.", criteria: "Weave, colour, zari, dimensions" },
+      { id: "QC-2026-0041", reference: "GRN-2026-0092", product: "Mulberry silk yarn - raw", type: "Material receipt", status: "Accepted", inspector: "Priya N.", criteria: "Count, weight, shade" }
+    ],
+    invoices: [
+      { id: "INV-2026-0039", orderId: "SO-2026-0039", customer: "Ananya Iyer", taxableValue: 16095, gst: 805, total: 16900, status: "Paid", due: "2026-09-13", issuedAt: "2026-09-13T09:45:00.000Z" },
+      { id: "INV-2026-0041", orderId: "SO-2026-0041", customer: "Nila Sarees", taxableValue: 27524, gst: 1376, total: 28900, status: "Outstanding", due: "2026-10-13", issuedAt: "2026-09-14T05:06:00.000Z" }
+    ],
+    shipments: [
+      { id: "PKG-2026-0040", orderId: "SO-2026-0040", carrier: "BlueDart", tracking: "BD78439201", status: "Picking", packageId: "PKG-2026-0040", destination: "Mumbai" }
+    ],
+    receipts: [{ id: "RCT-2026-0118", invoiceId: "INV-2026-0039", customer: "Ananya Iyer", amount: 16900, mode: "UPI", status: "Reconciled", receivedAt: "2026-09-13T10:01:00.000Z" }],
+    payments: [],
+    journalEntries: [
+      { id: "JE-2026-0211", reference: "INV-2026-0041", description: "Sales invoice · Nila Sarees", debit: "Accounts receivable", credit: "Sales revenue", amount: 28900, status: "Posted" },
+      { id: "JE-2026-0210", reference: "INV-2026-0041", description: "Output GST · 5%", debit: "Accounts receivable", credit: "Output GST", amount: 1376, status: "Posted" },
+      { id: "JE-2026-0209", reference: "RCT-2026-0118", description: "UPI receipt · Ananya Iyer", debit: "Bank - UPI", credit: "Accounts receivable", amount: 16900, status: "Posted" }
+    ],
+    gstLedger: [
+      { id: "GST-2026-0061", reference: "INV-2026-0041", direction: "Output", hsn: "5007", rate: 5, taxableValue: 27524, tax: 1376, status: "Ready for return" },
+      { id: "GST-2026-0059", reference: "GRN-2026-0092", direction: "Input", hsn: "5005", rate: 5, taxableValue: 120000, tax: 6000, status: "Reconciled" }
+    ],
+    workflows: [
+      { id: "WF-001", type: "Payment approval", reference: "VEN-002 / PO-2026-0089", owner: "CFO", status: "Pending", threshold: "₹50,000+" },
+      { id: "WF-002", type: "QC approval", reference: "QC-2026-0042", owner: "Production Head", status: "Pending", threshold: "All production receipts" },
+      { id: "WF-003", type: "Credit approval", reference: "SO-2026-0041", owner: "Sales Head", status: "Approved", threshold: "B2B credit terms" }
+    ],
+    roles: [
+      { id: "ROLE-OWNER", name: "Owner / Board", permissions: "View, approve, export", users: 1 },
+      { id: "ROLE-FINANCE", name: "CFO / Finance Head", permissions: "Finance, GST, approve payments", users: 1 },
+      { id: "ROLE-WAREHOUSE", name: "Warehouse", permissions: "Receive, pick, transfer, count", users: 3 },
+      { id: "ROLE-AUDITOR", name: "Auditor", permissions: "View audit, export", users: 1 }
+    ],
+    integrations: [
+      { name: "GST / e-invoice provider", status: "Ready to connect", mode: "REST + webhook" },
+      { name: "Bank feeds", status: "Ready to connect", mode: "Statement import / API" },
+      { name: "Courier / logistics", status: "Sandbox", mode: "Tracking webhook" },
+      { name: "WhatsApp / email", status: "Ready to connect", mode: "Template messages" }
+    ],
+    migration: { sourceSystems: ["Excel", "Tally", "Paper registers"], phases: ["Extract", "Clean & deduplicate", "Migrate masters", "Reconcile opening balances", "Parallel verify", "Progressive cutover"], status: "Planning" }
   };
 }
 
 function loadStore() {
-  if (!existsSync(storePath)) return seedStore();
-  try { return JSON.parse(readFileSync(storePath, "utf8")); } catch { return seedStore(); }
+  const defaults = seedStore();
+  if (!existsSync(storePath)) return defaults;
+  try {
+    const saved = JSON.parse(readFileSync(storePath, "utf8"));
+    return { ...defaults, ...saved, products: saved.products || defaults.products, customers: saved.customers || defaults.customers, orders: saved.orders || defaults.orders, events: saved.events || defaults.events, audit: saved.audit || defaults.audit };
+  } catch { return defaults; }
 }
 let store = loadStore();
 function persist() { mkdirSync(dataDir, { recursive: true }); writeFileSync(storePath, JSON.stringify(store, null, 2)); }
@@ -82,6 +131,25 @@ function summary() {
   const lowStock = store.products.filter((p) => available(p) <= p.reorderLevel);
   return { salesValue, collections: 118400, inventoryValue, receivables, payables, openOrders: openOrders.length, wip: 184600, lowStock: lowStock.length, margin: 34.8, cash: 842300 };
 }
+function blueprint() {
+  return {
+    architecture: ["Web admin + mobile/PWA + POS", "API backend", "Modular business domains", "PostgreSQL-ready transactional store", "Redis/cache + object storage", "BI / analytics"],
+    canonicalFlow: ["Supplier", "Purchase order", "GRN + QC", "Raw material", "Production / job work", "WIP", "Finished saree", "SKU + barcode", "Warehouse", "Sales order", "Invoice", "Dispatch", "Customer", "Receipt", "Bank reconciliation"],
+    modules: [
+      { id: "masters", name: "Master data foundation", status: "Live", entities: "Organisation, products/SKUs, parties, tax, price lists, bins" },
+      { id: "procurement", name: "Procurement & vendor management", status: "Live", entities: "Requisitions, RFQs, quotations, POs, GRNs, QC, 3-way match" },
+      { id: "manufacturing", name: "Manufacturing & job work", status: "Live", entities: "Production orders, material issue, WIP, job work, yield, wastage" },
+      { id: "inventory", name: "Inventory & warehouse", status: "Live", entities: "Stock states, ledger, reservations, transfers, counts, ageing" },
+      { id: "sales", name: "Omnichannel sales & CRM", status: "Live", entities: "Quotes, orders, pricing, credit, customers, returns" },
+      { id: "logistics", name: "Logistics & fulfilment", status: "Live", entities: "Packages, invoices, dispatch, tracking, POD, returns" },
+      { id: "finance", name: "Finance, payments & banking", status: "Live", entities: "GL, AP, AR, receipts, payments, reconciliation" },
+      { id: "gst", name: "GST & statutory compliance", status: "Ready for provider", entities: "HSN, input/output tax, e-invoice, e-way bill, reconciliation" },
+      { id: "control", name: "Control tower & workflow alerts", status: "Live", entities: "Revenue, margin, cash, exceptions, approvals, audit" }
+    ],
+    principles: ["One canonical master per vendor, customer, product and location", "Operational transactions generate finance and tax consequences", "Immutable stock and audit history", "Idempotent APIs and integration events", "Maker-checker and segregation of duties", "Configuration over hard-coding", "AI after clean transactional data"],
+    roadmap: ["Foundation + controls", "Procure-to-pay", "Manufacture-to-stock", "Order-to-cash", "Finance + compliance", "Management intelligence", "Customer channels"]
+  };
+}
 async function body(req) { let text = ""; for await (const chunk of req) text += chunk; if (!text) return {}; try { return JSON.parse(text); } catch { return null; } }
 function staticFile(req, res) {
   const rawPath = new URL(req.url, "http://localhost").pathname;
@@ -97,8 +165,16 @@ const server = http.createServer(async (req, res) => {
   if (req.method === "GET" && url.pathname.startsWith("/api/")) {
     if (url.pathname === "/api/health") return json(res, 200, { ok: true, service: "slns-platform", version: "0.1.0", time: now() });
     if (url.pathname === "/api/summary") return json(res, 200, summary());
+    if (url.pathname === "/api/blueprint") return json(res, 200, blueprint());
+    if (url.pathname === "/api/masters") return json(res, 200, { organisation: store.organisation, products: store.products, customers: store.customers, vendors: store.vendors, locations: store.locations, roles: store.roles, integrations: store.integrations, migration: store.migration });
     if (url.pathname === "/api/products") return json(res, 200, store.products.map((p) => ({ ...p, available: available(p) })));
+    if (url.pathname === "/api/costing") return json(res, 200, store.products.filter((p) => p.category !== "Raw material").map((p) => { const components = [{ name: "Silk / yarn", value: Math.round(p.trueCost * 0.34) }, { name: "Zari", value: Math.round(p.trueCost * 0.13) }, { name: "Dyeing + weaving", value: Math.round(p.trueCost * 0.28) }, { name: "Job work + finishing", value: Math.round(p.trueCost * 0.17) }, { name: "Packaging + freight + overhead", value: Math.round(p.trueCost * 0.08) }]; return { sku: p.sku, name: p.name, trueCost: p.trueCost, price: p.price, contributionMargin: p.price - p.trueCost - Math.round(p.price * 0.05), components }; }));
     if (url.pathname === "/api/orders") return json(res, 200, store.orders);
+    if (url.pathname === "/api/stock-movements") return json(res, 200, store.stockMovements.slice(0, 50));
+    if (url.pathname === "/api/quality") return json(res, 200, store.qualityInspections);
+    if (url.pathname === "/api/production") return json(res, 200, store.production);
+    if (url.pathname === "/api/procurement") return json(res, 200, { purchaseOrders: store.purchaseOrders, vendors: store.vendors, workflows: store.workflows.filter((w) => /Payment|Procurement/i.test(w.type)) });
+    if (url.pathname === "/api/logistics") return json(res, 200, { invoices: store.invoices, shipments: store.shipments, receipts: store.receipts });
     if (url.pathname === "/api/events") return json(res, 200, store.events);
     if (url.pathname === "/api/alerts") return json(res, 200, [
       ...store.purchaseOrders.filter((p) => p.status === "Overdue").map((p) => ({ severity: "high", title: "Purchase order overdue", detail: `${p.id} · ${p.vendor}`, action: "Follow up vendor" })),
@@ -107,6 +183,8 @@ const server = http.createServer(async (req, res) => {
       { severity: "low", title: "Receivable approaching due", detail: "Kaveri Collective · ₹22,600", action: "Review account" }
     ]);
     if (url.pathname === "/api/finance") return json(res, 200, { receivables: store.customers, payables: store.purchaseOrders, cash: summary().cash, tax: { input: 32400, output: 68400, pendingReconciliation: 2 } });
+    if (url.pathname === "/api/ledger") return json(res, 200, { journalEntries: store.journalEntries, gstLedger: store.gstLedger, receipts: store.receipts, payments: store.payments });
+    if (url.pathname === "/api/workflows") return json(res, 200, store.workflows);
     if (url.pathname === "/api/audit") return json(res, 200, store.audit.slice(0, 50));
     return json(res, 404, { error: "Not found" });
   }
@@ -133,6 +211,69 @@ const server = http.createServer(async (req, res) => {
       store.stockMovements.unshift({ id: id("MOV").toUpperCase(), transactionId, type: "RESERVATION", productId: product.id, product: product.name, qty, unit: product.unit, user: payload.user || "Demo User", occurredAt: now(), note: `Sales order ${orderId}` });
       logEvent("SALE", "Sales order reserved", `${orderId} · ${qty} ${product.unit} ${product.name}`); audit("CREATE", "SALES_ORDER", orderId, `Reserved ${qty} ${product.sku} for ${customer.name}`); persist();
       return json(res, 201, { order, transactionId });
+    }
+    if (url.pathname === "/api/actions/invoice") {
+      const order = store.orders.find((o) => o.id === payload.orderId);
+      if (!order) return bad(res, "Sales order not found");
+      if (store.invoices.some((i) => i.orderId === order.id)) return bad(res, "This order already has an invoice");
+      const taxableValue = Math.round(order.value / 1.05); const gst = order.value - taxableValue; const invoiceId = `INV-${new Date().getFullYear()}-${String(store.invoices.length + 42).padStart(4, "0")}`;
+      const invoice = { id: invoiceId, orderId: order.id, customer: order.customer, taxableValue, gst, total: order.value, status: "Outstanding", due: new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10), issuedAt: now() };
+      store.invoices.unshift(invoice); order.status = "Invoiced";
+      store.journalEntries.unshift({ id: id("JE").toUpperCase(), reference: invoiceId, description: `Sales invoice · ${order.customer}`, debit: "Accounts receivable", credit: "Sales revenue", amount: order.value, status: "Posted" });
+      store.gstLedger.unshift({ id: id("GST").toUpperCase(), reference: invoiceId, direction: "Output", hsn: "5007", rate: 5, taxableValue, tax: gst, status: "Ready for return" });
+      logEvent("FINANCE", "Invoice issued", `${invoiceId} · ${order.customer} · ${order.value}`); audit("POST", "INVOICE", invoiceId, `Issued from ${order.id}`); persist();
+      return json(res, 201, invoice);
+    }
+    if (url.pathname === "/api/actions/dispatch") {
+      const order = store.orders.find((o) => o.id === payload.orderId); const product = order && store.products.find((p) => p.id === order.productId);
+      if (!order || !product) return bad(res, "Order or product not found");
+      if (product.reserved < order.qty || product.onHand < order.qty) return bad(res, "Reserved stock is not available for dispatch");
+      product.onHand -= order.qty; product.reserved -= order.qty; order.status = "Dispatched";
+      const shipmentId = `SHP-${new Date().getFullYear()}-${String(store.shipments.length + 41).padStart(4, "0")}`; const transactionId = id("SHIP").toUpperCase();
+      const shipment = { id: shipmentId, orderId: order.id, carrier: payload.carrier || "BlueDart", tracking: payload.tracking || `TRK${Date.now().toString().slice(-8)}`, status: "Dispatched", packageId: `PKG-${shipmentId.slice(4)}`, destination: payload.destination || "India" };
+      store.shipments.unshift(shipment); store.stockMovements.unshift({ id: id("MOV").toUpperCase(), transactionId, type: "SHIPMENT", productId: product.id, product: product.name, qty: -order.qty, unit: product.unit, user: payload.user || "Demo User", occurredAt: now(), note: `Dispatch ${order.id}` });
+      logEvent("LOGISTICS", "Order dispatched", `${order.id} · ${shipment.tracking}`); audit("POST", "SHIPMENT", shipmentId, `Dispatched ${order.qty} ${product.sku}`); persist();
+      return json(res, 201, { shipment, transactionId });
+    }
+    if (url.pathname === "/api/actions/receipt") {
+      const invoice = store.invoices.find((i) => i.id === payload.invoiceId); const amount = Number(payload.amount);
+      if (!invoice || !Number.isFinite(amount) || amount <= 0 || amount > invoice.total) return bad(res, "Choose an invoice and a valid receipt amount");
+      const receiptId = id("RCT").toUpperCase(); const receipt = { id: receiptId, invoiceId: invoice.id, customer: invoice.customer, amount, mode: payload.mode || "UPI", status: "Reconciled", receivedAt: now() };
+      store.receipts.unshift(receipt); invoice.status = amount >= invoice.total ? "Paid" : "Part paid";
+      const customer = store.customers.find((c) => c.name === invoice.customer); if (customer) customer.outstanding = Math.max(0, customer.outstanding - amount);
+      store.journalEntries.unshift({ id: id("JE").toUpperCase(), reference: receiptId, description: `Customer receipt · ${invoice.customer}`, debit: `Bank - ${receipt.mode}`, credit: "Accounts receivable", amount, status: "Posted" });
+      logEvent("FINANCE", "Customer receipt reconciled", `${receiptId} · ${invoice.customer} · ${amount}`); audit("POST", "RECEIPT", receiptId, `Settled ${invoice.id}`); persist();
+      return json(res, 201, receipt);
+    }
+    if (url.pathname === "/api/actions/qc") {
+      const inspection = store.qualityInspections.find((q) => q.id === payload.inspectionId); if (!inspection || !["Accepted", "Rejected"].includes(payload.status)) return bad(res, "Choose a QC inspection and Accepted or Rejected");
+      inspection.status = payload.status; inspection.inspector = payload.inspector || "Demo User"; const workflow = store.workflows.find((w) => w.reference.includes(inspection.id)); if (workflow) workflow.status = "Approved";
+      logEvent("QC", `QC ${payload.status.toLowerCase()}`, `${inspection.id} · ${inspection.product}`); audit("APPROVE", "QUALITY_INSPECTION", inspection.id, `QC result ${payload.status}`); persist(); return json(res, 200, inspection);
+    }
+    if (url.pathname === "/api/actions/material-issue") {
+      const product = store.products.find((p) => p.id === payload.productId); const qty = Number(payload.qty);
+      if (!product || product.category !== "Raw material" || !Number.isFinite(qty) || qty <= 0 || available(product) < qty) return bad(res, "Choose available raw material and a valid issue quantity");
+      product.onHand -= qty; const transactionId = id("ISS").toUpperCase();
+      store.stockMovements.unshift({ id: id("MOV").toUpperCase(), transactionId, type: "ISSUE", productId: product.id, product: product.name, qty: -qty, unit: product.unit, user: payload.user || "Demo User", occurredAt: now(), note: `Issue to ${payload.productionId || "WIP"}` });
+      logEvent("PRODUCTION", "Raw material issued", `${qty} ${product.unit} ${product.name} → ${payload.productionId || "WIP"}`); audit("POST", "MATERIAL_ISSUE", transactionId, `Issued ${qty} ${product.sku}`); persist(); return json(res, 201, { transactionId, product: { ...product, available: available(product) } });
+    }
+    if (url.pathname === "/api/actions/transfer") {
+      const product = store.products.find((p) => p.id === payload.productId); const qty = Number(payload.qty);
+      if (!product || !Number.isFinite(qty) || qty <= 0 || available(product) < qty || !payload.from || !payload.to) return bad(res, "Choose product, locations and a valid available quantity");
+      const transactionId = id("TRF").toUpperCase(); store.stockMovements.unshift({ id: id("MOV").toUpperCase(), transactionId, type: "TRANSFER", productId: product.id, product: product.name, qty: 0, unit: product.unit, user: payload.user || "Demo User", occurredAt: now(), note: `${payload.from} → ${payload.to}` });
+      logEvent("INVENTORY", "Stock transfer posted", `${qty} ${product.unit} ${product.name} · ${payload.from} → ${payload.to}`); audit("POST", "STOCK_TRANSFER", transactionId, `Moved ${qty} ${product.sku}`); persist(); return json(res, 201, { transactionId });
+    }
+    if (url.pathname === "/api/actions/return") {
+      const order = store.orders.find((o) => o.id === payload.orderId); const product = order && store.products.find((p) => p.id === order.productId); const qty = Number(payload.qty || order?.qty);
+      if (!order || !product || !Number.isFinite(qty) || qty <= 0 || qty > order.qty) return bad(res, "Choose a valid order and return quantity");
+      product.onHand += qty; order.status = "Returned"; const creditNoteId = `CN-${new Date().getFullYear()}-${String(store.invoices.length + 1).padStart(4, "0")}`; const transactionId = id("RET").toUpperCase();
+      store.stockMovements.unshift({ id: id("MOV").toUpperCase(), transactionId, type: "RETURN", productId: product.id, product: product.name, qty, unit: product.unit, user: payload.user || "Demo User", occurredAt: now(), note: payload.reason || "Customer return" });
+      store.gstLedger.unshift({ id: id("GST").toUpperCase(), reference: creditNoteId, direction: "Adjustment", hsn: "5007", rate: 5, taxableValue: Math.round((product.price * qty) / 1.05), tax: Math.round((product.price * qty) - (product.price * qty) / 1.05), status: "Ready for return" });
+      logEvent("SALE", "Return and credit note posted", `${creditNoteId} · ${order.id}`); audit("POST", "CREDIT_NOTE", creditNoteId, `Returned ${qty} ${product.sku}`); persist(); return json(res, 201, { creditNoteId, transactionId });
+    }
+    if (url.pathname === "/api/actions/approve") {
+      const workflow = store.workflows.find((w) => w.id === payload.workflowId); if (!workflow) return bad(res, "Workflow task not found");
+      workflow.status = payload.status === "Rejected" ? "Rejected" : "Approved"; audit("APPROVE", "WORKFLOW", workflow.id, `${workflow.type} marked ${workflow.status}`); persist(); return json(res, 200, workflow);
     }
     return json(res, 404, { error: "Not found" });
   }
