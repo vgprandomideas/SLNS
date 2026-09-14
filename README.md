@@ -9,14 +9,17 @@ An end-to-end starter platform for a silk textile business, aligned to the suppl
 - Procurement, production/job-work, inventory, order-to-cash, finance/GST and audit views.
 - Immutable-style transaction APIs for material receipt, finished-goods receipt and sales-order reservation.
 - Stock availability calculated from on-hand less reserved quantities.
-- JSON persistence for local development and a clear API boundary for future PostgreSQL, GST, banking, logistics and messaging adapters.
+- Balanced double-entry postings with trial-balance validation, configurable workflow transitions, outbox delivery/retry and idempotency keys.
+- Document upload metadata with validated local object storage, payment-intent/refund flows, consent updates and order-status lookup.
+- PostgreSQL schema/migration tooling plus XLSX/CSV/Tally XML import preparation and an authenticated migration-import action.
+- Provider adapters for GST, bank, payment, logistics, messaging and object storage; unset providers run safe sandbox mode and configured providers use HTTP adapters.
 - Blueprint coverage view that maps the supplied operating model, canonical business flow, modules, principles and phased roadmap into the application.
 
 ## API surface
 
-Read models are exposed under `/api`: `blueprint`, `masters`, `summary`, `products`, `costing`, `orders`, `procurement`, `production`, `quality`, `stock-movements`, `logistics`, `finance`, `ledger`, `workflows`, `alerts`, `events` and `audit`.
+Read models are exposed under `/api`: `blueprint`, `masters`, `summary`, `products`, `costing`, `orders`, `procurement`, `production`, `quality`, `stock-movements`, `logistics`, `finance`, `ledger`, `ledger/trial-balance`, `workflows`, `workflow-history`, `alerts`, `events`, `audit`, `integrations`, `payment-intents`, `refunds`, `uploads`, `migrations` and `storefront/order-status`.
 
-Write transactions are exposed under `/api/actions`: `receive`, `material-issue`, `production`, `order`, `invoice`, `dispatch`, `receipt`, `qc`, `approve`, `transfer` and `return`. Each write creates a transaction reference, updates the relevant operational state and appends an audit/event record.
+Write transactions are exposed under `/api/actions`: `receive`, `material-issue`, `production`, `order`, `invoice`, `dispatch`, `receipt`, `qc`, `approve`, `transfer`, `return`, `return-qc`, `payment-intent`, `refund`, `workflow-transition`, `document-upload`, `integration-dispatch`, `customer-consent`, `migration-import` and `backup`. Each write creates a transaction reference, updates the relevant operational state and appends an audit/event record.
 
 ## Run locally
 
@@ -38,4 +41,4 @@ Local demo sign-in is enabled with role-specific accounts: `priya` / `slns-demo-
 npm test
 ```
 
-The local release includes safe demo/sandbox adapters, not live provider credentials. Before go-live, move the relational adapter to managed PostgreSQL, connect an identity provider with MFA, configure GST/e-invoice, bank, payment, logistics and messaging providers, enable managed object storage and TLS, then complete statutory, restore, load and security review.
+The repository now includes production integration and migration foundations. Provider URLs and credentials are intentionally not committed; configure them through the hosting provider’s secret store. The current HTTP service still uses SQLite at runtime while PostgreSQL migration tooling is exercised during deployment cutover. Complete managed PostgreSQL cutover, identity provider/MFA, provider contracts, TLS, statutory validation, restore drill, load test and security review before go-live.

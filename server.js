@@ -4,6 +4,10 @@ import { dirname, extname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { randomUUID, scryptSync, timingSafeEqual } from "node:crypto";
 import { loadRelationalStore, openDatabase, persistRelationalStore } from "./db.js";
+import { balancedJournal, trialBalance, validateJournal } from "./services/ledger.js";
+import { requiredApprover, transition } from "./services/workflow.js";
+import { callProvider, providerStatus } from "./services/providers.js";
+import { openPostgresStore } from "./services/postgres-store.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const publicDir = join(__dirname, "public");
@@ -12,6 +16,10 @@ const storePath = join(dataDir, "store.json");
 const dbPath = process.env.DATABASE_PATH ? resolve(process.env.DATABASE_PATH) : join(dataDir, "slns.sqlite");
 const port = Number(process.env.PORT || 3000);
 const db = openDatabase(dbPath);
+let postgresStore = null;
+if (process.env.DATABASE_URL) {
+  try { postgresStore = await openPostgresStore(process.env.DATABASE_URL); } catch (error) { console.error(`PostgreSQL connection failed: ${error.message}`); process.exit(1); }
+}
 const now = () => new Date().toISOString();
 const id = (prefix) => `${prefix}-${randomUUID().slice(0, 8)}`;
 const passwordSalt = "slns-local-demo-salt";
@@ -213,12 +221,15 @@ function loadStore() {
   return loadRelationalStore(db, defaults, storePath);
 }
 let store = loadStore();
+if (postgresStore) { const remoteStore = await postgresStore.read(); if (remoteStore) store = { ...store, ...remoteStore }; }
 const sessions = new Map();
 store.products = (store.products || []).map((product) => ({ ...product, designCode: product.designCode || product.sku, border: product.border || "Handwoven contrast", pallu: product.pallu || "Woven pallu", blouseDetails: product.blouseDetails || "Unstitched blouse piece", mrp: product.mrp || product.price, retailPrice: product.retailPrice || product.price, wholesalePrice: product.wholesalePrice || Math.round(product.price * 0.85), barcode: product.barcode || `890${product.sku.replace(/\D/g, "").slice(-9).padStart(9, "0")}`, qr: product.qr || `QR-${product.sku}`, photos: product.photos || [], active: product.active !== false }));
 store.users = (store.users || []).map((user) => ({ ...user, passwordHash: user.passwordHash || hashPassword(demoPasswordFor[user.username] || randomUUID()) }));
+for (const domain of ["uploadedDocuments", "paymentIntents", "refunds", "workflowHistory", "integrationEvents", "idempotencyKeys", "customerAccounts"]) store[domain] ||= [];
 const loginAttempts = new Map();
 const storefrontRequests = new Map();
-function persist() { mkdirSync(dataDir, { recursive: true }); persistRelationalStore(db, store); }
+let persistQueue = Promise.resolve();
+function persist() { mkdirSync(dataDir, { recursive: true }); persistRelationalStore(db, store); if (postgresStore) persistQueue = persistQueue.then(() => postgresStore.write(store)).catch((error) => console.error(`PostgreSQL persistence failed: ${error.message}`)); }
 if (!db.prepare("SELECT 1 FROM meta WHERE key = 'snapshot'").get()) persist();
 const json = (res, status, body) => { res.writeHead(status, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff", "Referrer-Policy": "same-origin" }); res.end(JSON.stringify(body)); };
 const bad = (res, message) => json(res, 400, { error: message });
@@ -229,6 +240,9 @@ function can(user, permission) { return Boolean(user && (user.permissions?.inclu
 function requirePermission(req, res, permission) { const user = requireAuth(req, res); if (!user) return null; if (!can(user, permission)) { json(res, 403, { error: `Role ${user.role} cannot perform ${permission}` }); return null; } return user; }
 function logEvent(type, title, detail, user = "Demo User") { store.events.unshift({ id: id("EVT"), type, title, detail, user, occurredAt: now() }); store.events = store.events.slice(0, 20); }
 function audit(action, entity, entityId, detail, user = "Demo User") { store.audit.unshift({ id: id("AUD"), action, entity, entityId, detail, user, occurredAt: now() }); }
+function postJournal(reference, description, debit, credit, amount, user = "System") { const entry = balancedJournal({ id: id("JE").toUpperCase(), reference, description, debit, credit, amount, user, occurredAt: now() }); if (!validateJournal(entry)) throw new Error("Unbalanced journal rejected"); store.journalEntries.unshift(entry); return entry; }
+function enqueue(event, reference, destination, payload = {}) { const item = { id: id("OUT").toUpperCase(), event, reference, destination, payload, attempts: 0, status: "Queued", createdAt: now(), nextAttemptAt: now() }; store.outbox.unshift(item); return item; }
+function idempotent(key) { return key && store.idempotencyKeys.find((entry) => entry.key === key); }
 function summary() {
   const inventoryValue = store.products.reduce((sum, p) => sum + p.onHand * p.trueCost, 0);
   const openOrders = store.orders.filter((o) => o.status !== "Delivered");
@@ -263,7 +277,7 @@ function enhancements() {
 function prd() {
   return { version: "1.0", status: "Implementation PRD", architecture: { layers: ["Web / PWA / POS", "API layer", "Modular business backend", "Relational transactional store", "Cache / object storage / search", "Background jobs / event outbox / monitoring / backups"] }, acceptance: store.prdAcceptance, procurement: { requisitions: store.requisitions, rfqs: store.rfqs, quotations: store.quotations, grns: store.grns, vendorBills: store.vendorBills }, manufacturing: { boms: store.boms, jobWorks: store.jobWorks, wip: store.wip }, commercial: { priceLists: store.priceLists, priceHistory: store.priceHistory, creditPolicies: store.creditPolicies }, banking: { bankTransactions: store.bankTransactions }, experience: { notifications: store.notifications, documents: store.documents, rtoNdr: store.rtoNdr }, outOfScope: ["AI assistants", "Demand prediction", "Microservice decomposition", "Custom banking infrastructure", "Custom GST gateway", "Blockchain"] };
 }
-async function body(req) { let text = ""; for await (const chunk of req) text += chunk; if (!text) return {}; try { return JSON.parse(text); } catch { return null; } }
+async function body(req) { let text = ""; for await (const chunk of req) { text += chunk; if (text.length > 12 * 1024 * 1024) return null; } if (!text) return {}; try { return JSON.parse(text); } catch { return null; } }
 function staticFile(req, res) {
   const rawPath = new URL(req.url, "http://localhost").pathname;
   const requested = rawPath === "/" || rawPath === "/shop" || rawPath === "/shop/" ? "/storefront.html" : rawPath === "/operations" || rawPath === "/operations/" ? "/index.html" : rawPath;
@@ -277,8 +291,13 @@ const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
   if (req.method === "GET" && url.pathname.startsWith("/api/")) {
     if (url.pathname === "/api/auth/me") { const user = currentUser(req); return user ? json(res, 200, { user }) : json(res, 401, { error: "Authentication required" }); }
-    if (url.pathname === "/api/health") return json(res, 200, { ok: true, service: "slns-platform", version: "0.1.0", time: now() });
+    if (url.pathname === "/api/health") return json(res, 200, { ok: true, service: "slns-platform", version: "0.1.0", database: postgresStore ? "postgresql" : "sqlite", time: now() });
     if (url.pathname === "/api/storefront/products") return json(res, 200, store.products.filter((p) => p.category !== "Raw material" && available(p) > 0).map((p) => ({ id: p.id, sku: p.sku, name: p.name, collection: p.collection, price: p.price, available: available(p), qr: p.qr || `QR-${p.sku}` })));
+    if (url.pathname === "/api/storefront/order-status") {
+      const order = store.orders.find((candidate) => candidate.id === url.searchParams.get("orderId")); const customer = order && store.customers.find((candidate) => candidate.id === order.customerId);
+      if (!order || !customer || !url.searchParams.get("email") || customer.email !== url.searchParams.get("email")) return json(res, 404, { error: "Order not found" });
+      return json(res, 200, { orderId: order.id, status: order.status, product: order.product, qty: order.qty, value: order.value, createdAt: order.createdAt, tracking: store.shipments.find((shipment) => shipment.orderId === order.id)?.tracking || null });
+    }
     if (!requireAuth(req, res)) return;
     if (url.pathname === "/api/summary") return json(res, 200, summary());
     if (url.pathname === "/api/blueprint") return json(res, 200, blueprint());
@@ -299,7 +318,12 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === "/api/banking") return json(res, 200, { accounts: ["HDFC Current · 4421", "ICICI Collections · 1180"], transactions: store.bankTransactions, unmatched: store.bankTransactions.filter((t) => t.status === "Unmatched") });
     if (url.pathname === "/api/notifications") return json(res, 200, store.notifications);
     if (url.pathname === "/api/documents") return json(res, 200, store.documents);
-    if (url.pathname === "/api/integrations") return json(res, 200, { providers: store.integrations, outbox: store.outbox, failures: store.integrationFailures });
+    if (url.pathname === "/api/integrations") return json(res, 200, { providers: store.integrations, configuredProviders: providerStatus(), outbox: store.outbox, failures: store.integrationFailures });
+    if (url.pathname === "/api/payment-intents") return json(res, 200, store.paymentIntents);
+    if (url.pathname === "/api/refunds") return json(res, 200, store.refunds);
+    if (url.pathname === "/api/workflow-history") return json(res, 200, store.workflowHistory.slice(0, 100));
+    if (url.pathname === "/api/uploads") return json(res, 200, store.uploadedDocuments.map(({ storage, ...document }) => document));
+    if (url.pathname === "/api/migrations") return json(res, 200, store.migration);
     if (url.pathname === "/api/search") { const q = (url.searchParams.get("q") || "").trim().toLowerCase(); if (!q) return json(res, 200, []); const sources = [["Product", store.products], ["Customer", store.customers], ["Vendor", store.vendors], ["Order", store.orders], ["Invoice", store.invoices], ["Shipment", store.shipments], ["Production", store.production], ["Payment", store.payments]]; const results = sources.flatMap(([type, rows]) => rows.filter((row) => JSON.stringify(row).toLowerCase().includes(q)).slice(0, 10).map((row) => ({ type, id: row.id, label: row.name || row.product || row.customer || row.vendor || row.description || row.orderId || row.invoiceId || row.type, data: row }))); return json(res, 200, results.slice(0, 50)); }
     if (url.pathname === "/api/logistics") return json(res, 200, { invoices: store.invoices, shipments: store.shipments, receipts: store.receipts });
     if (url.pathname === "/api/returns") return json(res, 200, store.returns);
@@ -314,6 +338,7 @@ const server = http.createServer(async (req, res) => {
     ]);
     if (url.pathname === "/api/finance") return json(res, 200, { receivables: store.customers, payables: store.purchaseOrders, cash: summary().cash, tax: { input: 32400, output: 68400, pendingReconciliation: 2 } });
     if (url.pathname === "/api/ledger") return json(res, 200, { journalEntries: store.journalEntries, gstLedger: store.gstLedger, receipts: store.receipts, payments: store.payments });
+    if (url.pathname === "/api/ledger/trial-balance") return json(res, 200, { balanced: store.journalEntries.every(validateJournal), accounts: trialBalance(store.journalEntries) });
     if (url.pathname === "/api/reports") { const revenue = store.invoices.reduce((sum, i) => sum + i.total, 0); const cogs = store.orders.reduce((sum, o) => { const p = store.products.find((x) => x.id === o.productId); return sum + (p?.trueCost || 0) * o.qty; }, 0); const gstInput = store.gstLedger.filter((g) => g.direction === "Input").reduce((sum, g) => sum + g.tax, 0); const gstOutput = store.gstLedger.filter((g) => g.direction === "Output").reduce((sum, g) => sum + g.tax, 0); return json(res, 200, { profitAndLoss: { revenue, cogs, grossProfit: revenue - cogs, operatingExpenses: 42000, netProfit: revenue - cogs - 42000 }, balanceSheet: { inventory: summary().inventoryValue, receivables: summary().receivables, payables: summary().payables, cash: summary().cash }, cashFlow: { operatingInflow: store.receipts.reduce((sum, r) => sum + r.amount, 0), vendorOutflow: store.payments.reduce((sum, p) => sum + p.amount, 0), closingCash: summary().cash }, gst: { input: gstInput, output: gstOutput, payable: Math.max(0, gstOutput - gstInput) } }); }
     if (url.pathname === "/api/ops") return json(res, 200, { targets: store.nfr, security: { tls: "Required at deployment", encryptionAtRest: "Managed database/storage responsibility", mfa: "Required for finance/admin", secrets: "Use managed secret store", environments: "Separate dev / staging / production", logging: "Centralised logs + error tracking", restoreDrill: "Quarterly" }, backup: { strategy: "Daily full + continuous WAL", rpo: store.nfr?.rpo, rto: store.nfr?.rto, lastBackupAt: store.lastBackupAt || null } });
     if (url.pathname === "/api/workflows") return json(res, 200, store.workflows);
@@ -332,9 +357,17 @@ const server = http.createServer(async (req, res) => {
       const client = req.socket.remoteAddress || "unknown"; const recent = storefrontRequests.get(client) || []; const fresh = recent.filter((timestamp) => Date.now() - timestamp < 60 * 60 * 1000); if (fresh.length >= 30) return json(res, 429, { error: "Storefront rate limit exceeded" }); storefrontRequests.set(client, [...fresh, Date.now()]);
       const product = store.products.find((candidate) => candidate.id === payload.productId); const qty = Number(payload.qty); const customerName = String(payload.customerName || "").trim(); if (!product || !customerName || !Number.isFinite(qty) || qty <= 0 || available(product) < qty) return bad(res, "Choose an available product, customer name and valid quantity");
       let customer = store.customers.find((candidate) => candidate.email && candidate.email === payload.email); if (!customer) { customer = { id: id("CUS").toUpperCase(), name: customerName, type: "Online", city: payload.city || "India", email: payload.email || null, creditLimit: 0, outstanding: 0, marketingConsent: Boolean(payload.marketingConsent) }; store.customers.push(customer); }
-      product.reserved += qty; const orderId = `WEB-${new Date().getFullYear()}-${String(store.orders.length + 1).padStart(4, "0")}`; const order = { id: orderId, customerId: customer.id, customer: customer.name, channel: "Website", productId: product.id, product: product.name, qty, value: product.price * qty, status: "Ready to dispatch", paymentMode: payload.paymentMode || "Prepaid", createdAt: now() }; store.orders.unshift(order); const transactionId = id("RES").toUpperCase(); store.stockMovements.unshift({ id: id("MOV").toUpperCase(), transactionId, type: "RESERVATION", productId: product.id, product: product.name, qty, unit: product.unit, user: "Storefront", occurredAt: now(), note: `Website order ${orderId}` }); logEvent("SALE", "Website order received", `${orderId} · ${customer.name}`); audit("CREATE", "WEB_ORDER", orderId, `Reserved ${qty} ${product.sku}`); persist(); return json(res, 201, { orderId, transactionId, status: order.status });
+      product.reserved += qty; const orderId = `WEB-${new Date().getFullYear()}-${String(store.orders.length + 1).padStart(4, "0")}`; const paymentMode = payload.paymentMode || "Prepaid"; const order = { id: orderId, customerId: customer.id, customer: customer.name, channel: "Website", productId: product.id, product: product.name, qty, value: product.price * qty, status: paymentMode === "Prepaid" ? "Payment pending" : "Reserved", paymentMode, createdAt: now() }; store.orders.unshift(order); const transactionId = id("RES").toUpperCase(); store.stockMovements.unshift({ id: id("MOV").toUpperCase(), transactionId, type: "RESERVATION", productId: product.id, product: product.name, qty, unit: product.unit, user: "Storefront", occurredAt: now(), note: `Website order ${orderId}` }); enqueue("order.created", orderId, "Internal notifications", { orderId, customer: customer.name, value: order.value }); logEvent("SALE", "Website order received", `${orderId} · ${customer.name}`); audit("CREATE", "WEB_ORDER", orderId, `Reserved ${qty} ${product.sku}`); persist(); return json(res, 201, { orderId, transactionId, status: order.status, amount: order.value, paymentMode });
     }
-    const permission = url.pathname.includes("/actions/approve") ? "approve:write" : url.pathname.includes("/actions/receipt") || url.pathname.includes("/actions/vendor-payment") || url.pathname.includes("/actions/weaver-advance") || url.pathname.includes("/actions/bank-reconcile") || url.pathname.includes("/actions/three-way-match") ? "finance:write" : url.pathname.includes("/actions/order") || url.pathname.includes("/actions/invoice") || url.pathname.includes("/actions/dispatch") || url.pathname.includes("/actions/return") ? "sales:write" : "inventory:write";
+    if (url.pathname === "/api/storefront/payment-intent") {
+      const order = store.orders.find((candidate) => candidate.id === payload.orderId); const amount = Number(payload.amount || order?.value);
+      const customer = order && store.customers.find((candidate) => candidate.id === order.customerId); if (!order || !customer || !payload.email || customer.email !== payload.email || !Number.isFinite(amount) || amount <= 0) return bad(res, "Choose an order, matching customer email and a positive amount");
+      const existing = idempotent(payload.idempotencyKey); if (existing) return json(res, 200, existing.response);
+      let provider; try { provider = await callProvider("payment", { orderId: order.id, amount, currency: "INR", customer: order.customer }); } catch (error) { return json(res, 502, { error: error.message }); }
+      const intent = { id: id("PI").toUpperCase(), orderId: order.id, amount, provider: provider.mode, status: provider.mode === "sandbox" ? "Requires confirmation" : "Created", providerReference: provider.reference || provider.data?.id || null, createdAt: now() };
+      store.paymentIntents.unshift(intent); const outbox = enqueue("payment.intent.created", intent.id, "Payment provider", { orderId: order.id, amount }); if (payload.idempotencyKey) store.idempotencyKeys.unshift({ key: payload.idempotencyKey, response: { paymentIntent: intent, outboxId: outbox.id }, createdAt: now() }); audit("CREATE", "PAYMENT_INTENT", intent.id, `Created ${amount} INR for ${order.id}`); persist(); return json(res, 201, { paymentIntent: intent, outboxId: outbox.id });
+    }
+    const permission = url.pathname.includes("/actions/approve") ? "approve:write" : url.pathname.includes("/actions/migration") ? "admin:write" : url.pathname.includes("/actions/receipt") || url.pathname.includes("/actions/vendor-payment") || url.pathname.includes("/actions/weaver-advance") || url.pathname.includes("/actions/bank-reconcile") || url.pathname.includes("/actions/three-way-match") || url.pathname.includes("/actions/gst-submit") || url.pathname.includes("/actions/bank-sync") ? "finance:write" : url.pathname.includes("/actions/order") || url.pathname.includes("/actions/invoice") || url.pathname.includes("/actions/dispatch") || url.pathname.includes("/actions/return") || url.pathname.includes("/actions/refund") || url.pathname.includes("/actions/shipment-sync") || url.pathname.includes("/actions/notify") ? "sales:write" : "inventory:write";
     const user = requirePermission(req, res, permission); if (!user) return;
     payload.user ||= user.name;
     if (url.pathname === "/api/actions/receive" || url.pathname === "/api/actions/production") {
@@ -366,7 +399,7 @@ const server = http.createServer(async (req, res) => {
       const taxableValue = Math.round(order.value / 1.05); const gst = order.value - taxableValue; const invoiceId = `INV-${new Date().getFullYear()}-${String(store.invoices.length + 42).padStart(4, "0")}`;
       const invoice = { id: invoiceId, orderId: order.id, customer: order.customer, taxableValue, gst, total: order.value, status: "Outstanding", due: new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10), issuedAt: now() };
       store.invoices.unshift(invoice); order.status = "Invoiced";
-      store.journalEntries.unshift({ id: id("JE").toUpperCase(), reference: invoiceId, description: `Sales invoice · ${order.customer}`, debit: "Accounts receivable", credit: "Sales revenue", amount: order.value, status: "Posted" });
+      postJournal(invoiceId, `Sales invoice · ${order.customer}`, "Accounts receivable", "Sales revenue", order.value, payload.user);
       store.gstLedger.unshift({ id: id("GST").toUpperCase(), reference: invoiceId, direction: "Output", hsn: "5007", rate: 5, taxableValue, tax: gst, status: "Ready for return" });
       logEvent("FINANCE", "Invoice issued", `${invoiceId} · ${order.customer} · ${order.value}`); audit("POST", "INVOICE", invoiceId, `Issued from ${order.id}`); persist();
       return json(res, 201, invoice);
@@ -388,7 +421,7 @@ const server = http.createServer(async (req, res) => {
       const receiptId = id("RCT").toUpperCase(); const receipt = { id: receiptId, invoiceId: invoice.id, customer: invoice.customer, amount, mode: payload.mode || "UPI", status: "Reconciled", receivedAt: now() };
       store.receipts.unshift(receipt); invoice.status = amount >= invoice.total ? "Paid" : "Part paid";
       const customer = store.customers.find((c) => c.name === invoice.customer); if (customer) customer.outstanding = Math.max(0, customer.outstanding - amount);
-      store.journalEntries.unshift({ id: id("JE").toUpperCase(), reference: receiptId, description: `Customer receipt · ${invoice.customer}`, debit: `Bank - ${receipt.mode}`, credit: "Accounts receivable", amount, status: "Posted" });
+      postJournal(receiptId, `Customer receipt · ${invoice.customer}`, `Bank - ${receipt.mode}`, "Accounts receivable", amount, payload.user);
       logEvent("FINANCE", "Customer receipt reconciled", `${receiptId} · ${invoice.customer} · ${amount}`); audit("POST", "RECEIPT", receiptId, `Settled ${invoice.id}`); persist();
       return json(res, 201, receipt);
     }
@@ -437,7 +470,7 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === "/api/actions/weaver-advance") {
       const ledger = store.weaverLedgers.find((w) => w.id === payload.weaverId); const amount = Number(payload.amount);
       if (!ledger || !Number.isFinite(amount) || amount <= 0) return bad(res, "Choose a weaver and a positive advance amount");
-      ledger.advance += amount; const paymentId = id("ADV").toUpperCase(); store.payments.unshift({ id: paymentId, vendor: ledger.weaver, amount, type: "Weaver advance", status: "Posted", paidAt: now() }); store.journalEntries.unshift({ id: id("JE").toUpperCase(), reference: paymentId, description: `Weaver advance · ${ledger.weaver}`, debit: "Weaver advances", credit: "Bank / cash", amount, status: "Posted" }); logEvent("PROCUREMENT", "Weaver advance posted", `${ledger.weaver} · ${amount}`); audit("POST", "WEAVER_ADVANCE", paymentId, `Advance posted for ${ledger.id}`); persist(); return json(res, 201, { paymentId, ledger });
+      ledger.advance += amount; const paymentId = id("ADV").toUpperCase(); store.payments.unshift({ id: paymentId, vendor: ledger.weaver, amount, type: "Weaver advance", status: "Posted", paidAt: now() }); postJournal(paymentId, `Weaver advance · ${ledger.weaver}`, "Weaver advances", "Bank / cash", amount, payload.user); logEvent("PROCUREMENT", "Weaver advance posted", `${ledger.weaver} · ${amount}`); audit("POST", "WEAVER_ADVANCE", paymentId, `Advance posted for ${ledger.id}`); persist(); return json(res, 201, { paymentId, ledger });
     }
     if (url.pathname === "/api/actions/content") {
       const asset = store.contentAssets.find((a) => a.id === payload.assetId); if (!asset) return bad(res, "Content asset not found");
@@ -447,7 +480,7 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === "/api/actions/vendor-payment") {
       const po = store.purchaseOrders.find((candidate) => candidate.id === payload.purchaseOrderId); const amount = Number(payload.amount);
       if (!po || !Number.isFinite(amount) || amount <= 0 || amount > po.value) return bad(res, "Choose a purchase order and a valid payment amount");
-      const paymentId = id("PAY").toUpperCase(); po.status = amount >= po.value ? "Paid" : "Part paid"; store.payments.unshift({ id: paymentId, purchaseOrderId: po.id, vendor: po.vendor, amount, type: "Vendor payment", status: "Approved", paidAt: now() }); store.journalEntries.unshift({ id: id("JE").toUpperCase(), reference: paymentId, description: `Vendor payment · ${po.vendor}`, debit: "Accounts payable", credit: "Bank / cash", amount, status: "Posted" }); logEvent("FINANCE", "Vendor payment posted", `${paymentId} · ${po.vendor} · ${amount}`); audit("POST", "VENDOR_PAYMENT", paymentId, `Settled ${po.id}`); persist(); return json(res, 201, { paymentId, status: po.status });
+      const paymentId = id("PAY").toUpperCase(); po.status = amount >= po.value ? "Paid" : "Part paid"; store.payments.unshift({ id: paymentId, purchaseOrderId: po.id, vendor: po.vendor, amount, type: "Vendor payment", status: "Approved", paidAt: now() }); postJournal(paymentId, `Vendor payment · ${po.vendor}`, "Accounts payable", "Bank / cash", amount, payload.user); logEvent("FINANCE", "Vendor payment posted", `${paymentId} · ${po.vendor} · ${amount}`); audit("POST", "VENDOR_PAYMENT", paymentId, `Settled ${po.id}`); persist(); return json(res, 201, { paymentId, status: po.status });
     }
     if (url.pathname === "/api/actions/three-way-match") {
       const bill = store.vendorBills.find((candidate) => candidate.id === payload.vendorBillId); if (!bill) return bad(res, "Vendor bill not found");
@@ -456,6 +489,51 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === "/api/actions/bank-reconcile") {
       const transaction = store.bankTransactions.find((candidate) => candidate.id === payload.bankTransactionId); if (!transaction) return bad(res, "Bank transaction not found");
       transaction.match = payload.reference || transaction.match; transaction.status = "Matched"; audit("MATCH", "BANK_TRANSACTION", transaction.id, `Matched to ${transaction.match || "manual reconciliation"}`); logEvent("FINANCE", "Bank transaction reconciled", `${transaction.id} · ${transaction.match || "manual match"}`); persist(); return json(res, 200, transaction);
+    }
+    if (url.pathname === "/api/actions/workflow-transition") {
+      const domains = ["requisitions", "purchaseOrders", "vendorBills", "orders", "returns", "production"]; const entity = domains.flatMap((domain) => (store[domain] || []).map((row) => ({ domain, row }))).find(({ row }) => row.id === payload.entityId);
+      if (!entity || !payload.workflowType || !payload.nextStatus) return bad(res, "Choose an entity, workflow type and next status");
+      const from = entity.row.status; try { transition(payload.workflowType, from, payload.nextStatus); } catch (error) { return bad(res, error.message); }
+      entity.row.status = payload.nextStatus; const approval = requiredApprover(store.approvalRules, payload.workflowType, Number(entity.row.value || entity.row.amount || 0), { entityId: entity.row.id }); const history = { id: id("WFH").toUpperCase(), entityId: entity.row.id, domain: entity.domain, type: payload.workflowType, from, to: payload.nextStatus, approver: approval?.approver || null, user: payload.user, occurredAt: now() }; store.workflowHistory.unshift(history); enqueue("workflow.transitioned", entity.row.id, "Internal notifications", history); audit("TRANSITION", payload.workflowType, entity.row.id, `${history.from} → ${history.to}`); persist(); return json(res, 200, { entity: entity.row, history, approval });
+    }
+    if (url.pathname === "/api/actions/document-upload") {
+      const filename = String(payload.filename || "").replace(/[^a-zA-Z0-9._-]/g, "-"); const content = String(payload.contentBase64 || ""); const allowed = ["application/pdf", "image/jpeg", "image/png", "text/csv", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"];
+      if (!filename || !content || !allowed.includes(payload.mimeType)) return bad(res, "Filename, supported MIME type and base64 content are required");
+      let buffer; try { buffer = Buffer.from(content, "base64"); } catch { return bad(res, "Document content must be valid base64"); }
+      if (!buffer.length || buffer.length > 8 * 1024 * 1024) return bad(res, "Document must be between 1 byte and 8 MB");
+      const documentId = id("DOC").toUpperCase(); const documentDir = join(dataDir, "documents"); mkdirSync(documentDir, { recursive: true }); const storageKey = `${documentId}-${filename}`; writeFileSync(join(documentDir, storageKey), buffer); let storage = `local://${storageKey}`; let storageMode = "local";
+      if (process.env.OBJECT_STORAGE_URL) { try { const remote = await callProvider("storage", { documentId, filename, mimeType: payload.mimeType, contentBase64: content }); storage = remote.data?.url || `object://${storageKey}`; storageMode = "configured"; } catch (error) { return json(res, 502, { error: `Object storage upload failed: ${error.message}` }); } }
+      const document = { id: documentId, type: payload.type || "Business document", reference: payload.reference || null, filename, mimeType: payload.mimeType, sizeBytes: buffer.length, storage, storageMode, status: "Available", uploadedBy: payload.user, uploadedAt: now() }; store.documents.unshift(document); store.uploadedDocuments.unshift(document); audit("UPLOAD", "DOCUMENT", documentId, `${filename} · ${buffer.length} bytes · ${storageMode}`); persist(); return json(res, 201, document);
+    }
+    if (["/api/actions/gst-submit", "/api/actions/bank-sync", "/api/actions/shipment-sync", "/api/actions/notify"].includes(url.pathname)) {
+      const type = url.pathname.split("/").pop().replace("-sync", "").replace("-submit", ""); const provider = type === "gst" ? "gst" : type === "bank" ? "bank" : type === "shipment" ? "logistics" : "messaging";
+      const request = { operation: type, reference: payload.reference || id("REQ").toUpperCase(), payload: payload.data || payload };
+      let result; try { result = await callProvider(provider, request); } catch (error) { const failure = { id: id("IF").toUpperCase(), provider, event: request.operation, reference: request.reference, attempts: 1, error: error.message, nextRetry: new Date(Date.now() + 300000).toISOString(), status: "Retry queued" }; store.integrationFailures.unshift(failure); persist(); return json(res, 502, { error: error.message, failure }); }
+      const event = { id: id("INT").toUpperCase(), provider, operation: type, reference: request.reference, mode: result.mode, result, createdAt: now() }; store.integrationEvents.unshift(event); if (type === "notify") store.notifications.unshift({ id: event.id, channel: payload.channel || "In-app", event: payload.event || "Notification", recipient: payload.recipient || "Operations", status: "Sent", sentAt: now() }); if (type === "gst") store.gstLedger = store.gstLedger.map((entry) => ({ ...entry, submittedAt: now(), status: "Submitted to adapter" })); audit("DISPATCH", "PROVIDER", event.id, `${provider} ${type} dispatched via ${result.mode}`); persist(); return json(res, 200, event);
+    }
+    if (url.pathname === "/api/actions/integration-dispatch") {
+      const event = store.outbox.find((candidate) => candidate.id === payload.outboxId); if (!event) return bad(res, "Outbox event not found"); const provider = payload.provider || ({ "GST provider": "gst", "Payment provider": "payment", "Courier": "logistics", "Messaging": "messaging" }[event.destination] || "messaging");
+      try { const result = await callProvider(provider, event.payload || { reference: event.reference }); event.attempts += 1; event.status = "Delivered"; event.deliveredAt = now(); const delivery = { id: id("INT").toUpperCase(), outboxId: event.id, provider, result, createdAt: now() }; store.integrationEvents.unshift(delivery); audit("DISPATCH", "INTEGRATION_EVENT", event.id, `${provider} adapter delivered`); persist(); return json(res, 200, { event, delivery }); } catch (error) { event.attempts += 1; event.status = "Retry queued"; const failure = { id: id("IF").toUpperCase(), provider, event: event.event, reference: event.reference, attempts: event.attempts, error: error.message, nextRetry: new Date(Date.now() + Math.min(event.attempts * 5, 60) * 60000).toISOString(), status: "Retry queued" }; store.integrationFailures.unshift(failure); persist(); return json(res, 502, { error: error.message, failure }); }
+    }
+    if (url.pathname === "/api/actions/refund") {
+      const order = store.orders.find((candidate) => candidate.id === payload.orderId); const amount = Number(payload.amount || order?.value); if (!order || !Number.isFinite(amount) || amount <= 0 || amount > order.value) return bad(res, "Choose an order and a valid refund amount");
+      const refundId = id("REF").toUpperCase(); let provider; try { provider = await callProvider("payment", { operation: "refund", orderId: order.id, amount, currency: "INR" }); } catch (error) { return json(res, 502, { error: error.message }); }
+      const refund = { id: refundId, orderId: order.id, amount, reason: payload.reason || "Customer return", provider: provider.mode, status: provider.mode === "sandbox" ? "Queued" : "Submitted", createdAt: now() }; store.refunds.unshift(refund); order.status = "Refund requested"; postJournal(refundId, `Sales refund · ${order.customer}`, "Sales returns and allowances", "Refunds payable", amount, payload.user); enqueue("refund.created", refundId, "Payment provider", refund); audit("CREATE", "REFUND", refundId, `${amount} INR for ${order.id}`); persist(); return json(res, 201, refund);
+    }
+    if (url.pathname === "/api/actions/customer-consent") {
+      const customer = store.customers.find((candidate) => candidate.id === payload.customerId || candidate.email === payload.email); if (!customer) return bad(res, "Customer not found"); customer.marketingConsent = Boolean(payload.marketingConsent); customer.consentUpdatedAt = now(); audit("UPDATE", "CUSTOMER_CONSENT", customer.id, `Marketing consent ${customer.marketingConsent ? "granted" : "withdrawn"}`); persist(); return json(res, 200, { id: customer.id, marketingConsent: customer.marketingConsent, consentUpdatedAt: customer.consentUpdatedAt });
+    }
+    if (url.pathname === "/api/actions/migration-import") {
+      if (!payload.data || typeof payload.data !== "object") return bad(res, "Migration data object is required");
+      const allowed = ["products", "customers", "vendors", "orders", "purchaseOrders", "invoices", "stockMovements", "bankTransactions"];
+      const imported = {}; const problems = [];
+      for (const [domain, rows] of Object.entries(payload.data)) {
+        if (!allowed.includes(domain)) continue; if (!Array.isArray(rows)) { problems.push(`${domain} must be an array`); continue; }
+        const ids = rows.map((row) => row.id); if (ids.some((value) => !value) || new Set(ids).size !== ids.length) problems.push(`${domain} contains missing or duplicate ids`); imported[domain] = rows;
+      }
+      if (problems.length) return bad(res, problems.join("; "));
+      for (const [domain, rows] of Object.entries(imported)) { const existing = new Map((store[domain] || []).map((row) => [row.id, row])); for (const row of rows) existing.set(row.id, { ...existing.get(row.id), ...row, importedAt: now() }); store[domain] = [...existing.values()]; }
+      store.migration = { ...store.migration, lastImportAt: now(), lastImportBy: payload.user, domains: Object.fromEntries(Object.entries(imported).map(([domain, rows]) => [domain, rows.length])), status: "Imported" }; audit("IMPORT", "MIGRATION", "cutover", `Imported ${Object.values(imported).reduce((sum, rows) => sum + rows.length, 0)} records`); persist(); return json(res, 201, { ok: true, migration: store.migration });
     }
     if (url.pathname === "/api/actions/backup") {
       if (!existsSync(dataDir)) mkdirSync(dataDir, { recursive: true }); persist(); const backupDir = join(dataDir, "backups"); mkdirSync(backupDir, { recursive: true }); const backupPath = join(backupDir, `slns-${new Date().toISOString().replaceAll(":", "-")}.sqlite`); copyFileSync(dbPath, backupPath); store.lastBackupAt = now(); persist(); audit("BACKUP", "STORE", "local", "Relational database backup snapshot created"); return json(res, 201, { ok: true, lastBackupAt: store.lastBackupAt, path: backupPath });

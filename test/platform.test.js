@@ -4,6 +4,8 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { openDatabase, persistRelationalStore, loadRelationalStore } from "../db.js";
+import { balancedJournal, trialBalance, validateJournal } from "../services/ledger.js";
+import { transition } from "../services/workflow.js";
 
 test("platform package is configured as an ES module service", async () => {
   const packageJson = await import("../package.json", { with: { type: "json" } });
@@ -28,4 +30,16 @@ test("relational adapter persists core records with foreign-key integrity", () =
     assert.equal(loaded.orders[0].productId, "P1");
     assert.equal(db.prepare("SELECT COUNT(*) AS count FROM products").get().count, 1);
   } finally { db?.close(); rmSync(folder, { recursive: true, force: true }); }
+});
+
+test("financial postings are balanced and trial balance nets to zero", () => {
+  const invoice = balancedJournal({ id: "JE-1", reference: "INV-1", description: "Test invoice", debit: "Accounts receivable", credit: "Sales revenue", amount: 1050 });
+  assert.equal(validateJournal(invoice), true);
+  const accounts = trialBalance([invoice]);
+  assert.equal(accounts.reduce((sum, account) => sum + account.balance, 0), 0);
+});
+
+test("workflow engine rejects invalid backwards transitions", () => {
+  assert.doesNotThrow(() => transition("Sales order", "Reserved", "Invoiced"));
+  assert.throws(() => transition("Sales order", "Delivered", "Reserved"), /cannot move backwards/);
 });

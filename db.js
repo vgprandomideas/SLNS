@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
-const arrayDomains = ["products", "customers", "vendors", "orders", "purchaseOrders", "production", "stockMovements", "events", "audit", "locations", "qualityInspections", "invoices", "shipments", "receipts", "payments", "journalEntries", "gstLedger", "workflows", "roles", "integrations", "pieces", "weaverLedgers", "channels", "posSyncQueue", "contentAssets", "seasonality", "kpis", "risks", "approvalRules", "requisitions", "rfqs", "quotations", "grns", "vendorBills", "boms", "jobWorks", "wip", "priceLists", "priceHistory", "creditPolicies", "bankTransactions", "notifications", "documents", "rtoNdr", "returns", "outbox", "integrationFailures", "prdAcceptance"];
+const arrayDomains = ["products", "customers", "vendors", "orders", "purchaseOrders", "production", "stockMovements", "events", "audit", "locations", "qualityInspections", "invoices", "shipments", "receipts", "payments", "journalEntries", "gstLedger", "workflows", "roles", "integrations", "pieces", "weaverLedgers", "channels", "posSyncQueue", "contentAssets", "seasonality", "kpis", "risks", "approvalRules", "requisitions", "rfqs", "quotations", "grns", "vendorBills", "boms", "jobWorks", "wip", "priceLists", "priceHistory", "creditPolicies", "bankTransactions", "notifications", "documents", "rtoNdr", "returns", "outbox", "integrationFailures", "prdAcceptance", "uploadedDocuments", "paymentIntents", "refunds", "workflowHistory", "integrationEvents", "idempotencyKeys", "customerAccounts"];
 
 export function openDatabase(dbPath) {
   mkdirSync(dirname(dbPath), { recursive: true });

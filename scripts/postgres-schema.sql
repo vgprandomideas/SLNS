@@ -1,0 +1,13 @@
+CREATE TABLE IF NOT EXISTS slns_meta (key TEXT PRIMARY KEY, value JSONB NOT NULL, updated_at TIMESTAMPTZ NOT NULL DEFAULT now());
+CREATE TABLE IF NOT EXISTS slns_products (id TEXT PRIMARY KEY, sku TEXT NOT NULL UNIQUE, name TEXT NOT NULL, category TEXT NOT NULL, on_hand NUMERIC NOT NULL DEFAULT 0, reserved NUMERIC NOT NULL DEFAULT 0, payload JSONB NOT NULL, updated_at TIMESTAMPTZ NOT NULL DEFAULT now());
+CREATE TABLE IF NOT EXISTS slns_parties (id TEXT PRIMARY KEY, party_type TEXT NOT NULL, name TEXT NOT NULL, payload JSONB NOT NULL, updated_at TIMESTAMPTZ NOT NULL DEFAULT now());
+CREATE TABLE IF NOT EXISTS slns_orders (id TEXT PRIMARY KEY, customer_id TEXT NOT NULL REFERENCES slns_parties(id), product_id TEXT NOT NULL REFERENCES slns_products(id), value NUMERIC NOT NULL, status TEXT NOT NULL, payload JSONB NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT now());
+CREATE TABLE IF NOT EXISTS slns_invoices (id TEXT PRIMARY KEY, order_id TEXT NOT NULL REFERENCES slns_orders(id), total NUMERIC NOT NULL, status TEXT NOT NULL, payload JSONB NOT NULL, issued_at TIMESTAMPTZ NOT NULL DEFAULT now());
+CREATE TABLE IF NOT EXISTS slns_stock_movements (id TEXT PRIMARY KEY, transaction_id TEXT NOT NULL UNIQUE, product_id TEXT NOT NULL REFERENCES slns_products(id), type TEXT NOT NULL, quantity NUMERIC NOT NULL, occurred_at TIMESTAMPTZ NOT NULL, payload JSONB NOT NULL);
+CREATE TABLE IF NOT EXISTS slns_journal_entries (id TEXT PRIMARY KEY, reference TEXT NOT NULL, debit TEXT NOT NULL, credit TEXT NOT NULL, amount NUMERIC NOT NULL CHECK (amount > 0), payload JSONB NOT NULL, occurred_at TIMESTAMPTZ NOT NULL DEFAULT now());
+CREATE TABLE IF NOT EXISTS slns_audit_events (id TEXT PRIMARY KEY, action TEXT NOT NULL, entity TEXT NOT NULL, entity_id TEXT NOT NULL, occurred_at TIMESTAMPTZ NOT NULL, payload JSONB NOT NULL);
+CREATE TABLE IF NOT EXISTS slns_domain_records (domain TEXT NOT NULL, id TEXT NOT NULL, payload JSONB NOT NULL, updated_at TIMESTAMPTZ NOT NULL DEFAULT now(), PRIMARY KEY(domain, id));
+CREATE TABLE IF NOT EXISTS slns_outbox (id TEXT PRIMARY KEY, event TEXT NOT NULL, reference TEXT NOT NULL, destination TEXT NOT NULL, payload JSONB NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL, next_attempt_at TIMESTAMPTZ, created_at TIMESTAMPTZ NOT NULL DEFAULT now());
+CREATE TABLE IF NOT EXISTS slns_idempotency_keys (key TEXT PRIMARY KEY, response JSONB NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT now());
+CREATE INDEX IF NOT EXISTS slns_outbox_retry_idx ON slns_outbox(status, next_attempt_at);
+CREATE INDEX IF NOT EXISTS slns_audit_entity_idx ON slns_audit_events(entity, entity_id, occurred_at DESC);

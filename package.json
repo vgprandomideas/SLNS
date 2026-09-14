@@ -8,6 +8,12 @@
     "start": "node server.js",
     "dev": "node --watch server.js",
     "test": "node --test",
-    "migrate:check": "node scripts/migrate.js"
+    "migrate:check": "node scripts/migrate.js",
+    "migrate:postgres": "node scripts/postgres-migrate.js",
+    "migrate:spreadsheet": "node scripts/migrate-spreadsheet.js"
+  },
+  "dependencies": {
+    "pg": "^8.13.1",
+    "xlsx": "^0.18.5"
   }
 }
