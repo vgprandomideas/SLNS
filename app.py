@@ -40,6 +40,18 @@ st.markdown(
     .stream-meta h3 { margin:.35rem 0; font-family:Georgia,serif; }
     .stream-meta p { color:#8a938c; font-size:.85rem; }
     .stream-meta strong { color:#244b3c; font:600 1.15rem Georgia,serif; }
+    .side-brand { display:flex; align-items:center; gap:.7rem; padding:.25rem .15rem .9rem; border-bottom:1px solid rgba(183,150,94,.25); margin-bottom:1rem; }
+    .side-brand-mark { display:grid; place-items:center; width:2.2rem; height:2.2rem; border:1px solid #c6a566; border-radius:50%; color:#d7b777; font:500 1.2rem Georgia,serif; }
+    .side-brand-name { color:#f8f1df; font:600 1.08rem Georgia,serif; letter-spacing:.04em; }
+    .side-brand-name small { display:block; margin-top:.12rem; color:#a8b8ad; font:700 .56rem sans-serif; letter-spacing:.19em; text-transform:uppercase; }
+    .side-section-label { margin:.25rem .1rem .5rem; color:#91aa9e; font:700 .62rem sans-serif; letter-spacing:.18em; text-transform:uppercase; }
+    [data-testid="stSidebar"] [role="radiogroup"] { gap:.38rem; }
+    [data-testid="stSidebar"] [role="radiogroup"] > label { margin:0; padding:.63rem .72rem !important; border:1px solid transparent; border-radius:.72rem; color:#b7c8bf; cursor:pointer; transition:background .2s ease, border-color .2s ease, color .2s ease, transform .2s ease, box-shadow .2s ease; }
+    [data-testid="stSidebar"] [role="radiogroup"] > label:hover { transform:translateX(3px); background:rgba(255,255,255,.07); border-color:rgba(198,165,102,.25); color:#fff; }
+    [data-testid="stSidebar"] [role="radiogroup"] > label:has(input:checked) { background:linear-gradient(100deg,#d7b66e,#b78a46); border-color:#efd795; color:#18382e; box-shadow:0 8px 18px rgba(0,0,0,.18); font-weight:800; }
+    [data-testid="stSidebar"] [role="radiogroup"] > label:has(input:checked) p { color:#18382e; }
+    [data-testid="stSidebar"] [role="radiogroup"] input { accent-color:#d6b56c; }
+    [data-testid="stSidebar"] .stAlert { border-radius:.75rem; border:1px solid rgba(117,171,143,.25); }
     </style>
     """,
     unsafe_allow_html=True,
@@ -126,11 +138,11 @@ def live_or_demo(path: str, key: str):
 
 
 def login_panel():
-    st.sidebar.subheader("SLNS Silk House")
+    st.sidebar.markdown('<div class="side-brand"><div class="side-brand-mark">S</div><div class="side-brand-name">SLNS<small>Silk House</small></div></div>', unsafe_allow_html=True)
     if not api_url():
-        st.sidebar.caption("Customer collection")
+        st.sidebar.markdown('<div class="side-section-label">Customer experience</div>', unsafe_allow_html=True)
         return
-    st.sidebar.subheader("Staff access")
+    st.sidebar.markdown('<div class="side-section-label">Staff access</div>', unsafe_allow_html=True)
     with st.sidebar.form("login"):
         username = st.text_input("Username", value="priya")
         password = st.text_input("Password", type="password")
@@ -235,9 +247,13 @@ def show_craft():
 login_panel()
 operator = bool(api_url() and (st.session_state.get("token") or os.getenv("SLNS_API_TOKEN")))
 if operator:
-    page = st.sidebar.radio("Workspace", ["Control tower", "Inventory", "Orders & commerce"])
+    page_names = {"⌂  Control tower": "Control tower", "▦  Inventory": "Inventory", "◌  Orders & commerce": "Orders & commerce"}
+    selected = st.sidebar.radio("Workspace", list(page_names), label_visibility="collapsed")
+    page = page_names[selected]
 else:
-    page = st.sidebar.radio("Explore", ["Silk collection", "Our craft"])
+    page_names = {"✦  Silk collection": "Silk collection", "◈  Our craft": "Our craft"}
+    selected = st.sidebar.radio("Explore", list(page_names), label_visibility="collapsed")
+    page = page_names[selected]
 
 if page == "Control tower":
     show_dashboard()
