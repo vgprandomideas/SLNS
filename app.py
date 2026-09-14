@@ -45,6 +45,35 @@ st.markdown(
     .side-brand-name { color:#f8f1df; font:600 1.08rem Georgia,serif; letter-spacing:.04em; }
     .side-brand-name small { display:block; margin-top:.12rem; color:#a8b8ad; font:700 .56rem sans-serif; letter-spacing:.19em; text-transform:uppercase; }
     .side-section-label { margin:.25rem .1rem .5rem; color:#91aa9e; font:700 .62rem sans-serif; letter-spacing:.18em; text-transform:uppercase; }
+    html, body, [data-testid="stAppViewContainer"], [data-testid="stMain"] { background:#f7f3eb !important; }
+    [data-testid="stHeader"] { background:rgba(247,243,235,.82) !important; }
+    [data-testid="stToolbar"] { opacity:.55; }
+    [data-testid="stMainBlockContainer"] { max-width:1440px; padding:2.35rem 3.1rem 4rem; }
+    .stApp h1, .stApp h2, .stApp h3 { color:#17392d !important; font-family:Georgia,serif !important; letter-spacing:-.025em; }
+    .stApp p, .stApp label, .stApp [data-testid="stMetricLabel"] { color:#66786f; }
+    [data-testid="stMetric"] { position:relative; overflow:hidden; min-height:108px; padding:1.05rem 1.15rem; border:1px solid #e4ded2; border-radius:1rem; background:#fffdf8; box-shadow:0 12px 28px rgba(51,62,48,.07); }
+    [data-testid="stMetric"]:after { content:""; position:absolute; right:-1.5rem; top:-1.6rem; width:5rem; height:5rem; border-radius:50%; background:#eaf1eb; }
+    [data-testid="stMetricValue"] { position:relative; z-index:1; color:#17392d !important; font:600 1.72rem Georgia,serif !important; }
+    [data-testid="stMetricLabel"] { position:relative; z-index:1; color:#8b735c !important; font:700 .67rem Arial,sans-serif !important; letter-spacing:.1em; text-transform:uppercase; }
+    [data-testid="stDataFrame"] { overflow:hidden; border:1px solid #e4ded2; border-radius:1rem; background:#fffdf8; box-shadow:0 10px 24px rgba(51,62,48,.05); }
+    .stButton > button, .stDownloadButton > button { min-height:2.55rem; border:1px solid #d8c8aa; border-radius:.7rem; background:#fffdf8; color:#18563f; font-weight:750; box-shadow:0 4px 12px rgba(51,62,48,.05); transition:transform .18s ease, box-shadow .18s ease, background .18s ease; }
+    .stButton > button:hover, .stDownloadButton > button:hover { transform:translateY(-2px); border-color:#bd9656; background:#fff8e9; color:#17392d; box-shadow:0 9px 18px rgba(51,62,48,.11); }
+    .stButton > button[kind="primary"] { border-color:#116149; background:#116149; color:#fffdf8; }
+    [data-testid="stAlert"] { border:1px solid #ead8ae; border-radius:.85rem; background:#fff8e8; color:#775c2d; box-shadow:0 8px 18px rgba(51,62,48,.04); }
+    [data-testid="stSidebar"] { background:linear-gradient(165deg,#0b2b22 0%,#123d30 58%,#0c2e25 100%) !important; }
+    [data-testid="stSidebar"] > div:first-child { padding:1.55rem 1.05rem 1.8rem; }
+    [data-testid="stSidebar"] .stButton > button { border-color:rgba(222,199,151,.32); background:rgba(255,255,255,.045); color:#f8f1df; box-shadow:none; }
+    [data-testid="stSidebar"] .stButton > button:hover { background:rgba(214,181,108,.16); color:#fff; }
+    .dashboard-hero { display:flex; align-items:flex-end; justify-content:space-between; gap:2rem; margin-bottom:1.7rem; padding:1.85rem 2rem; border:1px solid #e5dccb; border-radius:1.25rem; background:radial-gradient(circle at 88% 15%,rgba(212,176,102,.24),transparent 32%),linear-gradient(130deg,#fffdf8,#f1eadc); box-shadow:0 18px 38px rgba(51,62,48,.08); }
+    .dashboard-hero .kicker { color:#a77454; font:800 .66rem Arial,sans-serif; letter-spacing:.2em; }
+    .dashboard-hero h1 { margin:.45rem 0 .35rem; color:#17392d; font:500 clamp(2rem,4vw,3.5rem) Georgia,serif; }
+    .dashboard-hero p { max-width:610px; margin:0; color:#66786f; font-size:.96rem; }
+    .hero-seal { display:grid; place-items:center; width:7.8rem; height:7.8rem; flex:0 0 auto; border:1px solid #caa565; border-radius:50%; color:#aa7c3c; font:500 2.45rem Georgia,serif; background:rgba(255,253,248,.58); box-shadow:inset 0 0 0 7px rgba(202,165,101,.1); }
+    .hero-seal small { display:block; margin-top:-1rem; color:#8b735c; font:700 .5rem Arial,sans-serif; letter-spacing:.13em; text-transform:uppercase; }
+    .mode-pill { display:inline-flex; align-items:center; gap:.45rem; margin:.1rem 0 1rem; padding:.45rem .72rem; border:1px solid #e4d2aa; border-radius:999px; background:#fff8e8; color:#8a6a31; font:700 .72rem Arial,sans-serif; }
+    .mode-pill:before { content:"✦"; color:#bd8d42; }
+    .streamlit-expanderHeader { color:#17392d !important; background:#fffdf8; border-radius:.75rem; }
+    @media (max-width: 900px) { [data-testid="stMainBlockContainer"] { padding:1.4rem 1rem 3rem; } .dashboard-hero { align-items:flex-start; padding:1.3rem; } .hero-seal { width:5.5rem; height:5.5rem; font-size:1.8rem; } }
     [data-testid="stSidebar"] [role="radiogroup"] { gap:.38rem; }
     [data-testid="stSidebar"] [role="radiogroup"] > label { margin:0; padding:.63rem .72rem !important; border:1px solid transparent; border-radius:.72rem; color:#b7c8bf; cursor:pointer; transition:background .2s ease, border-color .2s ease, color .2s ease, transform .2s ease, box-shadow .2s ease; }
     [data-testid="stSidebar"] [role="radiogroup"] > label:hover { transform:translateX(3px); background:rgba(255,255,255,.07); border-color:rgba(198,165,102,.25); color:#fff; }
@@ -194,12 +223,12 @@ def login_panel():
 
 
 def show_dashboard():
-    st.title("SLNS Silk Operations Platform")
-    st.caption("Control tower for procurement, production, inventory, commerce, logistics and finance")
+    first_name = st.session_state.get("user", {}).get("name", "Priya").split()[0]
+    st.markdown(f'''<div class="dashboard-hero"><div><div class="kicker">SLNS SILK HOUSE · CONTROL TOWER</div><h1>Good morning, {first_name}.</h1><p>Procurement, production, inventory, commerce, logistics and finance — brought into one calm operating rhythm.</p></div><div class="hero-seal">S<small>Est. 1987</small></div></div>''', unsafe_allow_html=True)
     if api_url() and api_get("/api/health") is None:
-        st.warning("The configured Node backend is not reachable. Showing demo data.")
+        st.markdown('<div class="mode-pill">Preview data · backend connection needs attention</div>', unsafe_allow_html=True)
     elif not api_url():
-        st.warning("Demo mode: configure `SLNS_API_URL` to use live relational data and transactions.")
+        st.markdown('<div class="mode-pill">Preview workspace · ready for live backend connection</div>', unsafe_allow_html=True)
 
     summary = live_or_demo("/api/summary", "summary")
     if not isinstance(summary, dict):
