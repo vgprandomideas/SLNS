@@ -26,6 +26,10 @@ npm start
 
 Open http://localhost:3000. Data is persisted transactionally to the relational SQLite database at `data/slns.sqlite` and is intentionally ignored by Git. The schema uses foreign keys for products, parties, orders, invoices, stock movements, journals and audit events; the same adapter can be moved to PostgreSQL for production.
 
+### Streamlit entry point
+
+`app.py` is the Streamlit operator console. Commit both `app.py` and `requirements.txt` when deploying it to Streamlit Community Cloud. It runs in demo mode by default; set the `SLNS_API_URL` secret to the URL of a running Node service to connect live data and transactions. The Node service itself remains the source of truth for authenticated, transactional operations.
+
 Local demo sign-in is enabled with role-specific accounts: `priya` / `slns-demo-owner`, `arjun` / `slns-demo-finance`, or `ravi` / `slns-demo-warehouse`. The API enforces bearer sessions and write permissions; replace these demo credentials with an identity provider, MFA and managed secrets before production.
 
 ## Verify
