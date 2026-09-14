@@ -26,6 +26,8 @@ npm start
 
 Open http://localhost:3000. Data is persisted to `data/store.json` after the first transaction and is intentionally ignored by Git.
 
+Local demo sign-in is enabled with role-specific accounts: `priya` / `slns-demo-owner`, `arjun` / `slns-demo-finance`, or `ravi` / `slns-demo-warehouse`. The API enforces bearer sessions and write permissions; replace these demo credentials with an identity provider, MFA and managed secrets before production.
+
 ## Verify
 
 ```bash

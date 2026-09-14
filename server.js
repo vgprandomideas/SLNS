@@ -1,5 +1,5 @@
 import http from "node:http";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, extname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
@@ -15,6 +15,11 @@ const id = (prefix) => `${prefix}-${randomUUID().slice(0, 8)}`;
 function seedStore() {
   return {
     organisation: { name: "SLNS Silk House", legalEntity: "SLNS Silk House Private Limited", gstin: "29AABCS1234F1ZP", currency: "INR", branches: ["Bengaluru HQ", "Kanchipuram Workshop"] },
+    users: [
+      { id: "USR-OWNER", name: "Priya N.", username: "priya", role: "Owner / Board", permissions: ["*"] },
+      { id: "USR-FINANCE", name: "Arjun Rao", username: "arjun", role: "CFO / Finance Head", permissions: ["read", "finance:write", "approve:write"] },
+      { id: "USR-WAREHOUSE", name: "Ravi K.", username: "ravi", role: "Warehouse", permissions: ["read", "inventory:write", "production:write"] }
+    ],
     products: [
       { id: "SKU-KANCHI-001", sku: "SL-KAN-001", name: "Kanchipuram Ruby Zari", collection: "Heritage Gold", category: "Kanchipuram Silk", material: "Mulberry silk", design: "Temple checks", colour: "Ruby", zari: "Pure zari", trueCost: 18400, price: 28900, gstRate: 5, reorderLevel: 3, onHand: 8, reserved: 1, unit: "piece" },
       { id: "SKU-BANARAS-014", sku: "SL-BAN-014", name: "Banarasi Midnight Bloom", collection: "Nocturne", category: "Banarasi Silk", material: "Katan silk", design: "Floral jaal", colour: "Midnight blue", zari: "Tested zari", trueCost: 9200, price: 16900, gstRate: 5, reorderLevel: 4, onHand: 3, reserved: 0, unit: "piece" },
@@ -173,10 +178,16 @@ function loadStore() {
   } catch { return defaults; }
 }
 let store = loadStore();
+const sessions = new Map();
+const demoPasswords = { priya: "slns-demo-owner", arjun: "slns-demo-finance", ravi: "slns-demo-warehouse" };
 function persist() { mkdirSync(dataDir, { recursive: true }); writeFileSync(storePath, JSON.stringify(store, null, 2)); }
-const json = (res, status, body) => { res.writeHead(status, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" }); res.end(JSON.stringify(body)); };
+const json = (res, status, body) => { res.writeHead(status, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff", "Referrer-Policy": "same-origin" }); res.end(JSON.stringify(body)); };
 const bad = (res, message) => json(res, 400, { error: message });
 const available = (product) => product.onHand - product.reserved;
+function currentUser(req) { const header = req.headers.authorization || ""; const token = header.startsWith("Bearer ") ? header.slice(7) : ""; return sessions.get(token); }
+function requireAuth(req, res) { const user = currentUser(req); if (!user) { json(res, 401, { error: "Authentication required" }); return null; } return user; }
+function can(user, permission) { return Boolean(user && (user.permissions?.includes("*") || user.permissions?.includes(permission))); }
+function requirePermission(req, res, permission) { const user = requireAuth(req, res); if (!user) return null; if (!can(user, permission)) { json(res, 403, { error: `Role ${user.role} cannot perform ${permission}` }); return null; } return user; }
 function logEvent(type, title, detail, user = "Demo User") { store.events.unshift({ id: id("EVT"), type, title, detail, user, occurredAt: now() }); store.events = store.events.slice(0, 20); }
 function audit(action, entity, entityId, detail, user = "Demo User") { store.audit.unshift({ id: id("AUD"), action, entity, entityId, detail, user, occurredAt: now() }); }
 function summary() {
@@ -223,7 +234,9 @@ function staticFile(req, res) {
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
   if (req.method === "GET" && url.pathname.startsWith("/api/")) {
+    if (url.pathname === "/api/auth/me") { const user = currentUser(req); return user ? json(res, 200, { user }) : json(res, 401, { error: "Authentication required" }); }
     if (url.pathname === "/api/health") return json(res, 200, { ok: true, service: "slns-platform", version: "0.1.0", time: now() });
+    if (!requireAuth(req, res)) return;
     if (url.pathname === "/api/summary") return json(res, 200, summary());
     if (url.pathname === "/api/blueprint") return json(res, 200, blueprint());
     if (url.pathname === "/api/enhancements") return json(res, 200, enhancements());
@@ -247,12 +260,22 @@ const server = http.createServer(async (req, res) => {
     ]);
     if (url.pathname === "/api/finance") return json(res, 200, { receivables: store.customers, payables: store.purchaseOrders, cash: summary().cash, tax: { input: 32400, output: 68400, pendingReconciliation: 2 } });
     if (url.pathname === "/api/ledger") return json(res, 200, { journalEntries: store.journalEntries, gstLedger: store.gstLedger, receipts: store.receipts, payments: store.payments });
+    if (url.pathname === "/api/reports") { const revenue = store.invoices.reduce((sum, i) => sum + i.total, 0); const cogs = store.orders.reduce((sum, o) => { const p = store.products.find((x) => x.id === o.productId); return sum + (p?.trueCost || 0) * o.qty; }, 0); const gstInput = store.gstLedger.filter((g) => g.direction === "Input").reduce((sum, g) => sum + g.tax, 0); const gstOutput = store.gstLedger.filter((g) => g.direction === "Output").reduce((sum, g) => sum + g.tax, 0); return json(res, 200, { profitAndLoss: { revenue, cogs, grossProfit: revenue - cogs, operatingExpenses: 42000, netProfit: revenue - cogs - 42000 }, balanceSheet: { inventory: summary().inventoryValue, receivables: summary().receivables, payables: summary().payables, cash: summary().cash }, cashFlow: { operatingInflow: store.receipts.reduce((sum, r) => sum + r.amount, 0), vendorOutflow: store.payments.reduce((sum, p) => sum + p.amount, 0), closingCash: summary().cash }, gst: { input: gstInput, output: gstOutput, payable: Math.max(0, gstOutput - gstInput) } }); }
+    if (url.pathname === "/api/ops") return json(res, 200, { targets: store.nfr, security: { tls: "Required at deployment", encryptionAtRest: "Managed database/storage responsibility", mfa: "Required for finance/admin", secrets: "Use managed secret store", environments: "Separate dev / staging / production", logging: "Centralised logs + error tracking", restoreDrill: "Quarterly" }, backup: { strategy: "Daily full + continuous WAL", rpo: store.nfr?.rpo, rto: store.nfr?.rto, lastBackupAt: store.lastBackupAt || null } });
     if (url.pathname === "/api/workflows") return json(res, 200, store.workflows);
     if (url.pathname === "/api/audit") return json(res, 200, store.audit.slice(0, 50));
     return json(res, 404, { error: "Not found" });
   }
   if (req.method === "POST" && url.pathname.startsWith("/api/")) {
     const payload = await body(req); if (payload === null) return bad(res, "Request body must be valid JSON");
+    if (url.pathname === "/api/auth/login") {
+      const user = store.users.find((candidate) => candidate.username === payload.username && demoPasswords[candidate.username] === payload.password);
+      if (!user) return json(res, 401, { error: "Invalid demo credentials" });
+      const token = randomUUID(); sessions.set(token, user); return json(res, 200, { token, user });
+    }
+    const permission = url.pathname.includes("/actions/approve") ? "approve:write" : url.pathname.includes("/actions/receipt") || url.pathname.includes("/actions/vendor-payment") || url.pathname.includes("/actions/weaver-advance") ? "finance:write" : url.pathname.includes("/actions/order") || url.pathname.includes("/actions/invoice") || url.pathname.includes("/actions/dispatch") || url.pathname.includes("/actions/return") ? "sales:write" : "inventory:write";
+    const user = requirePermission(req, res, permission); if (!user) return;
+    payload.user ||= user.name;
     if (url.pathname === "/api/actions/receive" || url.pathname === "/api/actions/production") {
       const product = store.products.find((p) => p.id === payload.productId); const qty = Number(payload.qty);
       if (!product || !Number.isFinite(qty) || qty <= 0) return bad(res, "Choose a product and a positive quantity");
@@ -352,6 +375,14 @@ const server = http.createServer(async (req, res) => {
       const asset = store.contentAssets.find((a) => a.id === payload.assetId); if (!asset) return bad(res, "Content asset not found");
       if (payload.photos !== undefined) asset.photos = Math.max(0, Number(payload.photos)); if (payload.altText !== undefined) asset.altText = Boolean(payload.altText); if (payload.copyStatus) asset.copyStatus = payload.copyStatus; if (payload.channelStatus) asset.channelStatus = payload.channelStatus;
       audit("UPDATE", "CONTENT_ASSET", asset.id, `Content status updated for ${asset.sku}`); persist(); return json(res, 200, asset);
+    }
+    if (url.pathname === "/api/actions/vendor-payment") {
+      const po = store.purchaseOrders.find((candidate) => candidate.id === payload.purchaseOrderId); const amount = Number(payload.amount);
+      if (!po || !Number.isFinite(amount) || amount <= 0 || amount > po.value) return bad(res, "Choose a purchase order and a valid payment amount");
+      const paymentId = id("PAY").toUpperCase(); po.status = amount >= po.value ? "Paid" : "Part paid"; store.payments.unshift({ id: paymentId, purchaseOrderId: po.id, vendor: po.vendor, amount, type: "Vendor payment", status: "Approved", paidAt: now() }); store.journalEntries.unshift({ id: id("JE").toUpperCase(), reference: paymentId, description: `Vendor payment · ${po.vendor}`, debit: "Accounts payable", credit: "Bank / cash", amount, status: "Posted" }); logEvent("FINANCE", "Vendor payment posted", `${paymentId} · ${po.vendor} · ${amount}`); audit("POST", "VENDOR_PAYMENT", paymentId, `Settled ${po.id}`); persist(); return json(res, 201, { paymentId, status: po.status });
+    }
+    if (url.pathname === "/api/actions/backup") {
+      if (!existsSync(dataDir)) mkdirSync(dataDir, { recursive: true }); persist(); const backupDir = join(dataDir, "backups"); mkdirSync(backupDir, { recursive: true }); const backupPath = join(backupDir, `store-${new Date().toISOString().replaceAll(":", "-")}.json`); copyFileSync(storePath, backupPath); store.lastBackupAt = now(); persist(); audit("BACKUP", "STORE", "local", "Backup snapshot created"); return json(res, 201, { ok: true, lastBackupAt: store.lastBackupAt });
     }
     return json(res, 404, { error: "Not found" });
   }

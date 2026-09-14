@@ -1,0 +1,9 @@
+{
+  "name": "SLNS Silk House Operations",
+  "short_name": "SLNS Ops",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#fbfcfb",
+  "theme_color": "#11261f",
+  "description": "Silk procurement, production, inventory, sales and finance control tower."
+}
