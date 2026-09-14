@@ -28,7 +28,7 @@ Open the web application at `/` for the customer home, or `/operations` for the 
 
 ### Streamlit entry point
 
-`app.py` is the Streamlit operator console. Commit both `app.py` and `requirements.txt` when deploying it to Streamlit Community Cloud. It runs in demo mode by default; set the `SLNS_API_URL` secret to the URL of a running Node service to connect live data and transactions. The Node service itself remains the source of truth for authenticated, transactional operations.
+`app.py` is the public Streamlit customer experience. It shows only the silk collection and craft story when unauthenticated; internal operations pages appear only after a configured backend login. Commit both `app.py` and `requirements.txt` when deploying it to Streamlit Community Cloud. Set the `SLNS_API_URL` secret to connect live collection data and authenticated operations. The Node service remains the source of truth for transactional operations.
 
 Local demo sign-in is enabled with role-specific accounts: `priya` / `slns-demo-owner`, `arjun` / `slns-demo-finance`, or `ravi` / `slns-demo-warehouse`. The API enforces bearer sessions and write permissions; replace these demo credentials with an identity provider, MFA and managed secrets before production.
 

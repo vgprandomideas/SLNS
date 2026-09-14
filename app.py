@@ -14,7 +14,7 @@ import streamlit as st
 
 
 st.set_page_config(
-    page_title="SLNS Silk Operations",
+    page_title="SLNS Silk House",
     page_icon="🧵",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -31,6 +31,15 @@ st.markdown(
       .stButton > button, .stLinkButton > a { min-height: 2.75rem; width: 100%; }
       section[data-testid="stSidebar"] .stRadio label { padding: 0.45rem 0; }
     }
+    .store-kicker { color:#a77454; font-size:.72rem; font-weight:800; letter-spacing:.18em; margin-bottom:.5rem; }
+    .stream-product { overflow:hidden; border:1px solid #e0d6c5; border-radius:8px; background:#fffdf8; box-shadow:0 12px 28px rgba(75,55,27,.08); margin-bottom:.65rem; }
+    .stream-swatch { display:grid; place-items:center; min-height:180px; color:#f4d88e; background:linear-gradient(145deg, var(--tone), #b2824d); }
+    .stream-swatch span { font:500 4rem Georgia,serif; opacity:.72; }
+    .stream-meta { padding:1rem; }
+    .stream-meta small { color:#a37a50; letter-spacing:.12em; }
+    .stream-meta h3 { margin:.35rem 0; font-family:Georgia,serif; }
+    .stream-meta p { color:#8a938c; font-size:.85rem; }
+    .stream-meta strong { color:#244b3c; font:600 1.15rem Georgia,serif; }
     </style>
     """,
     unsafe_allow_html=True,
@@ -117,10 +126,11 @@ def live_or_demo(path: str, key: str):
 
 
 def login_panel():
-    st.sidebar.subheader("Backend login")
+    st.sidebar.subheader("SLNS Silk House")
     if not api_url():
-        st.sidebar.info("Demo mode. Add SLNS_API_URL for live data.")
+        st.sidebar.caption("Customer collection")
         return
+    st.sidebar.subheader("Staff access")
     with st.sidebar.form("login"):
         username = st.text_input("Username", value="priya")
         password = st.text_input("Password", type="password")
@@ -193,26 +203,49 @@ def show_orders():
     st.link_button("Open customer storefront", f"{api_url()}/storefront.html" if api_url() else "http://localhost:3000/storefront.html")
 
 
-def show_coverage():
-    st.title("Blueprint and PRD coverage")
-    blueprint = api_get("/api/blueprint") or {"modules": ["Masters", "Procurement", "Manufacturing", "Inventory", "Sales", "Finance", "Reports"]}
-    enhanced = api_get("/api/enhancements") or {"features": ["QR traceability", "Offline POS queue", "Weaver ledger", "Omnichannel storefront", "DPDP controls"]}
-    prd = api_get("/api/prd") or {"acceptance": [{"area": "Core operations", "status": "Implemented locally"}, {"area": "External integrations", "status": "Configure providers"}]}
-    st.subheader("Blueprint modules")
-    st.write(blueprint.get("modules", blueprint))
-    st.subheader("Enhanced capabilities")
-    st.write(enhanced.get("features", enhanced))
-    st.subheader("PRD acceptance")
-    st.dataframe(prd.get("acceptance", prd), use_container_width=True, hide_index=True)
+def show_collection():
+    st.markdown('<div class="store-kicker">SLNS SILK HOUSE · THE COLLECTION</div>', unsafe_allow_html=True)
+    st.title("Made to be remembered.")
+    st.write("Hand-finished silk sarees with one digital thread from loom to your door.")
+    st.markdown("### The current edit")
+    products = api_get("/api/storefront/products") or [item for item in DEMO["products"] if item["category"] != "Raw material"]
+    columns = st.columns(min(3, max(1, len(products))))
+    tones = ["#6d1e2b", "#102c46", "#285745"]
+    for index, product in enumerate(products):
+        with columns[index % len(columns)]:
+            colour = tones[index % len(tones)]
+            st.markdown(
+                f"<div class='stream-product' style='--tone:{colour}'><div class='stream-swatch'><span>{product.get('name', 'Silk').split()[0][0]}{product.get('name', 'House').split()[-1][0]}</span></div><div class='stream-meta'><small>{product.get('sku', 'SLNS')}</small><h3>{product.get('name', 'Silk house piece')}</h3><p>{product.get('collection', 'The edit')} · QR traceable</p><strong>₹{int(product.get('price', 0)):,}</strong></div></div>",
+                unsafe_allow_html=True,
+            )
+            if st.button("Reserve this piece", key=f"reserve-{index}", use_container_width=True):
+                st.info("Reservations are completed from the connected SLNS storefront.")
+
+
+def show_craft():
+    st.markdown('<div class="store-kicker">THE HOUSE NOTE</div>', unsafe_allow_html=True)
+    st.title("Rooted in the loom. Ready for tomorrow.")
+    st.write("SLNS brings the warmth of a family silk house into a considered digital experience. Each saree is catalogued, quality-checked and connected to the people who made it.")
+    columns = st.columns(3)
+    for column, number, title, detail in zip(columns, ["01", "02", "03"], ["Pure silk, considered", "Craft, credited", "Delivered with care"], ["Materials selected for a lifetime of wear.", "Meet the hands behind every weave.", "Inspected, wrapped and shipped from our house."]):
+        with column:
+            st.markdown(f"**{number} · {title}**\n\n{detail}")
 
 
 login_panel()
-page = st.sidebar.radio("Workspace", ["Control tower", "Inventory", "Orders & commerce", "Blueprint / PRD"])
+operator = bool(api_url() and (st.session_state.get("token") or os.getenv("SLNS_API_TOKEN")))
+if operator:
+    page = st.sidebar.radio("Workspace", ["Control tower", "Inventory", "Orders & commerce"])
+else:
+    page = st.sidebar.radio("Explore", ["Silk collection", "Our craft"])
+
 if page == "Control tower":
     show_dashboard()
 elif page == "Inventory":
     show_inventory()
 elif page == "Orders & commerce":
     show_orders()
+elif page == "Silk collection":
+    show_collection()
 else:
-    show_coverage()
+    show_craft()
