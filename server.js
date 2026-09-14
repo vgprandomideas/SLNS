@@ -165,6 +165,35 @@ function seedStore() {
       { name: "Financial integrity", test: "Trace every rupee to bank and ledger", status: "Ready" },
       { name: "Adoption", test: "Staff use system and side spreadsheets disappear", status: "Measure in pilot" },
       { name: "Resilience", test: "Restore backup and survive primary-server loss", status: "Drill required" }
+    ],
+    approvalRules: [
+      { id: "RULE-PO-1", transaction: "Purchase Order", condition: "₹0 - ₹50,000", approver: "Purchase Manager", status: "Active" },
+      { id: "RULE-PO-2", transaction: "Purchase Order", condition: "₹50,001 - ₹2,00,000", approver: "Procurement Head", status: "Active" },
+      { id: "RULE-DISCOUNT", transaction: "Sales discount", condition: "> 10%", approver: "Sales Head", status: "Active" },
+      { id: "RULE-CREDIT", transaction: "B2B credit exposure", condition: "> available credit", approver: "CFO", status: "Active" }
+    ],
+    requisitions: [{ id: "PR-2026-012", department: "Production", materials: [{ sku: "RM-SILK-RAW", qty: 30, unit: "kg" }], requiredDate: "2026-09-25", purpose: "Diwali replenishment", costCentre: "KAN-WORKSHOP", priority: "High", status: "Approval pending" }],
+    rfqs: [{ id: "RFQ-2026-006", requisitionId: "PR-2026-012", vendors: ["VEN-001", "VEN-002", "VEN-003"], status: "Quotations received" }],
+    quotations: [{ id: "QUO-2026-101", rfqId: "RFQ-2026-006", vendor: "Mysore Silk Co-op", price: 126000, gst: 6300, freight: 1800, deliveryDays: 12, creditDays: 30, qualityScore: 94, status: "Recommended" }],
+    grns: [{ id: "GRN-2026-0092", poId: "PO-2026-0088", orderedQty: 30, receivedQty: 20, acceptedQty: 20, rejectedQty: 0, batch: "SILK-SEP-26-A", warehouse: "Bengaluru HQ", qcStatus: "Accepted", status: "Partial receipt" }],
+    vendorBills: [{ id: "VB-2026-0031", vendor: "Mysore Silk Co-op", poId: "PO-2026-0088", invoiceNumber: "MSC-8841", invoiceDate: "2026-09-14", amount: 128100, gst: 6100, threeWayStatus: "Price variance", duplicate: false, status: "Exception" }],
+    boms: [{ id: "BOM-SL-KAN-001-V2", sku: "SL-KAN-001", version: 2, status: "Active", components: [{ name: "Mulberry silk yarn", qty: 1.8, unit: "kg" }, { name: "Pure zari", qty: 0.28, unit: "kg" }, { name: "Weaving + finishing", qty: 1, unit: "service" }], standardCost: 17600 }],
+    jobWorks: [{ id: "JW-2026-0018", productionId: "PO-2026-0018", worker: "Kanchipuram Weavers Guild", materialSent: 6, materialReturned: 5.6, expectedReturn: "2026-09-17", actualReturn: null, finishedQty: 0, wastage: 0.4, rate: 3200, payable: 0, status: "In progress" }],
+    wip: [{ id: "WIP-2026-0018", productionId: "PO-2026-0018", product: "Kanchipuram Ruby Zari", stage: "Zari finishing", qty: 4, location: "Kanchipuram Workshop / W1", responsible: "Kanchipuram Weavers Guild", startedAt: "2026-09-01", expectedCompletion: "2026-09-17", ageDays: 13, costAccumulated: 73600 }],
+    priceLists: [{ id: "PL-RETAIL", name: "Retail", rules: "MRP less promotion" }, { id: "PL-WHOLESALE", name: "Wholesale", rules: "15% below retail" }, { id: "PL-DEALER", name: "Dealer", rules: "Negotiated by customer" }],
+    priceHistory: [{ sku: "SL-KAN-001", channel: "Wholesale", price: 24565, effectiveFrom: "2026-09-01", approvedBy: "Sales Head" }],
+    creditPolicies: [{ customerType: "B2B dealer", creditDays: 30, warningAt: 80, actionAt: 100, action: "Approval required" }, { customerType: "Retail", creditDays: 0, warningAt: 0, actionAt: 0, action: "Prepaid" }],
+    bankTransactions: [{ id: "BANK-001", account: "HDFC Current · 4421", date: "2026-09-14", narration: "UPI/Ananya Iyer/16900", amount: 16900, direction: "Credit", match: "RCT-2026-0118", status: "Matched" }, { id: "BANK-002", account: "HDFC Current · 4421", date: "2026-09-14", narration: "NEFT/Mysore Silk Co-op", amount: 50000, direction: "Debit", match: null, status: "Unmatched" }],
+    notifications: [{ id: "NTF-001", channel: "In-app", event: "RTO threshold breached", recipient: "Sales Head", status: "Unread" }, { id: "NTF-002", channel: "WhatsApp", event: "Dispatch confirmation", recipient: "Kaveri Collective", status: "Queued" }],
+    documents: [{ id: "DOC-001", type: "QC report", reference: "QC-2026-0042", filename: "qc-banarasi-0017.pdf", storage: "object://slns-demo/qc-banarasi-0017.pdf", status: "Available" }],
+    rtoNdr: [{ id: "NDR-0041", orderId: "SO-2026-0040", channel: "Online · COD", pincode: "400001", reason: "Customer unavailable", attempt: 1, action: "Buyer confirmation pending", status: "Open" }],
+    prdAcceptance: [
+      { id: "AC-01", area: "Master data + organisation", criterion: "Every active finished saree and party has a canonical record", status: "Ready" },
+      { id: "AC-02", area: "Procure-to-pay", criterion: "PO → GRN → QC → three-way match → vendor payment", status: "In progress" },
+      { id: "AC-03", area: "Manufacture-to-stock", criterion: "Material issue and WIP can be traced to finished goods", status: "In progress" },
+      { id: "AC-04", area: "Order-to-cash", criterion: "Order → invoice → dispatch → receipt → settlement", status: "In progress" },
+      { id: "AC-05", area: "Controls", criterion: "RBAC, approval, audit and no silent balance changes", status: "Ready" },
+      { id: "AC-06", area: "Operations", criterion: "Backup restore, load test and security review completed", status: "Required before go-live" }
     ]
   };
 }
@@ -221,6 +250,9 @@ function blueprint() {
 function enhancements() {
   return { nfr: store.nfr, privacy: store.privacy, pieces: store.pieces, weaverLedgers: store.weaverLedgers, channels: store.channels, posSyncQueue: store.posSyncQueue, contentAssets: store.contentAssets, seasonality: store.seasonality, kpis: store.kpis, risks: store.risks, buildBuy: store.buildBuy, successTests: store.successTests };
 }
+function prd() {
+  return { version: "1.0", status: "Implementation PRD", architecture: { layers: ["Web / PWA / POS", "API layer", "Modular business backend", "Relational transactional store", "Cache / object storage / search", "Background jobs / event outbox / monitoring / backups"] }, acceptance: store.prdAcceptance, procurement: { requisitions: store.requisitions, rfqs: store.rfqs, quotations: store.quotations, grns: store.grns, vendorBills: store.vendorBills }, manufacturing: { boms: store.boms, jobWorks: store.jobWorks, wip: store.wip }, commercial: { priceLists: store.priceLists, priceHistory: store.priceHistory, creditPolicies: store.creditPolicies }, banking: { bankTransactions: store.bankTransactions }, experience: { notifications: store.notifications, documents: store.documents, rtoNdr: store.rtoNdr }, outOfScope: ["AI assistants", "Demand prediction", "Microservice decomposition", "Custom banking infrastructure", "Custom GST gateway", "Blockchain"] };
+}
 async function body(req) { let text = ""; for await (const chunk of req) text += chunk; if (!text) return {}; try { return JSON.parse(text); } catch { return null; } }
 function staticFile(req, res) {
   const rawPath = new URL(req.url, "http://localhost").pathname;
@@ -240,6 +272,7 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === "/api/summary") return json(res, 200, summary());
     if (url.pathname === "/api/blueprint") return json(res, 200, blueprint());
     if (url.pathname === "/api/enhancements") return json(res, 200, enhancements());
+    if (url.pathname === "/api/prd") return json(res, 200, prd());
     if (url.pathname === "/api/masters") return json(res, 200, { organisation: store.organisation, products: store.products, customers: store.customers, vendors: store.vendors, locations: store.locations, roles: store.roles, integrations: store.integrations, migration: store.migration });
     if (url.pathname === "/api/products") return json(res, 200, store.products.map((p) => ({ ...p, available: available(p) })));
     if (url.pathname === "/api/costing") return json(res, 200, store.products.filter((p) => p.category !== "Raw material").map((p) => { const components = [{ name: "Silk / yarn", value: Math.round(p.trueCost * 0.34) }, { name: "Zari", value: Math.round(p.trueCost * 0.13) }, { name: "Dyeing + weaving", value: Math.round(p.trueCost * 0.28) }, { name: "Job work + finishing", value: Math.round(p.trueCost * 0.17) }, { name: "Packaging + freight + overhead", value: Math.round(p.trueCost * 0.08) }]; return { sku: p.sku, name: p.name, trueCost: p.trueCost, price: p.price, contributionMargin: p.price - p.trueCost - Math.round(p.price * 0.05), components }; }));
@@ -248,6 +281,13 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === "/api/quality") return json(res, 200, store.qualityInspections);
     if (url.pathname === "/api/production") return json(res, 200, store.production);
     if (url.pathname === "/api/procurement") return json(res, 200, { purchaseOrders: store.purchaseOrders, vendors: store.vendors, workflows: store.workflows.filter((w) => /Payment|Procurement/i.test(w.type)) });
+    if (url.pathname === "/api/procurement-full") return json(res, 200, { requisitions: store.requisitions, rfqs: store.rfqs, quotations: store.quotations, grns: store.grns, vendorBills: store.vendorBills, approvalRules: store.approvalRules });
+    if (url.pathname === "/api/manufacturing") return json(res, 200, { production: store.production, boms: store.boms, materialIssues: store.stockMovements.filter((m) => m.type === "ISSUE"), jobWorks: store.jobWorks, wip: store.wip, quality: store.qualityInspections });
+    if (url.pathname === "/api/pricing") return json(res, 200, { priceLists: store.priceLists, priceHistory: store.priceHistory, creditPolicies: store.creditPolicies });
+    if (url.pathname === "/api/banking") return json(res, 200, { accounts: ["HDFC Current · 4421", "ICICI Collections · 1180"], transactions: store.bankTransactions, unmatched: store.bankTransactions.filter((t) => t.status === "Unmatched") });
+    if (url.pathname === "/api/notifications") return json(res, 200, store.notifications);
+    if (url.pathname === "/api/documents") return json(res, 200, store.documents);
+    if (url.pathname === "/api/search") { const q = (url.searchParams.get("q") || "").trim().toLowerCase(); if (!q) return json(res, 200, []); const sources = [["Product", store.products], ["Customer", store.customers], ["Vendor", store.vendors], ["Order", store.orders], ["Invoice", store.invoices], ["Shipment", store.shipments], ["Production", store.production], ["Payment", store.payments]]; const results = sources.flatMap(([type, rows]) => rows.filter((row) => JSON.stringify(row).toLowerCase().includes(q)).slice(0, 10).map((row) => ({ type, id: row.id, label: row.name || row.product || row.customer || row.vendor || row.description || row.orderId || row.invoiceId || row.type, data: row }))); return json(res, 200, results.slice(0, 50)); }
     if (url.pathname === "/api/logistics") return json(res, 200, { invoices: store.invoices, shipments: store.shipments, receipts: store.receipts });
     if (url.pathname === "/api/events") return json(res, 200, store.events);
     if (url.pathname === "/api/alerts") return json(res, 200, [
@@ -273,7 +313,7 @@ const server = http.createServer(async (req, res) => {
       if (!user) return json(res, 401, { error: "Invalid demo credentials" });
       const token = randomUUID(); sessions.set(token, user); return json(res, 200, { token, user });
     }
-    const permission = url.pathname.includes("/actions/approve") ? "approve:write" : url.pathname.includes("/actions/receipt") || url.pathname.includes("/actions/vendor-payment") || url.pathname.includes("/actions/weaver-advance") ? "finance:write" : url.pathname.includes("/actions/order") || url.pathname.includes("/actions/invoice") || url.pathname.includes("/actions/dispatch") || url.pathname.includes("/actions/return") ? "sales:write" : "inventory:write";
+    const permission = url.pathname.includes("/actions/approve") ? "approve:write" : url.pathname.includes("/actions/receipt") || url.pathname.includes("/actions/vendor-payment") || url.pathname.includes("/actions/weaver-advance") || url.pathname.includes("/actions/bank-reconcile") || url.pathname.includes("/actions/three-way-match") ? "finance:write" : url.pathname.includes("/actions/order") || url.pathname.includes("/actions/invoice") || url.pathname.includes("/actions/dispatch") || url.pathname.includes("/actions/return") ? "sales:write" : "inventory:write";
     const user = requirePermission(req, res, permission); if (!user) return;
     payload.user ||= user.name;
     if (url.pathname === "/api/actions/receive" || url.pathname === "/api/actions/production") {
@@ -380,6 +420,14 @@ const server = http.createServer(async (req, res) => {
       const po = store.purchaseOrders.find((candidate) => candidate.id === payload.purchaseOrderId); const amount = Number(payload.amount);
       if (!po || !Number.isFinite(amount) || amount <= 0 || amount > po.value) return bad(res, "Choose a purchase order and a valid payment amount");
       const paymentId = id("PAY").toUpperCase(); po.status = amount >= po.value ? "Paid" : "Part paid"; store.payments.unshift({ id: paymentId, purchaseOrderId: po.id, vendor: po.vendor, amount, type: "Vendor payment", status: "Approved", paidAt: now() }); store.journalEntries.unshift({ id: id("JE").toUpperCase(), reference: paymentId, description: `Vendor payment · ${po.vendor}`, debit: "Accounts payable", credit: "Bank / cash", amount, status: "Posted" }); logEvent("FINANCE", "Vendor payment posted", `${paymentId} · ${po.vendor} · ${amount}`); audit("POST", "VENDOR_PAYMENT", paymentId, `Settled ${po.id}`); persist(); return json(res, 201, { paymentId, status: po.status });
+    }
+    if (url.pathname === "/api/actions/three-way-match") {
+      const bill = store.vendorBills.find((candidate) => candidate.id === payload.vendorBillId); if (!bill) return bad(res, "Vendor bill not found");
+      bill.threeWayStatus = payload.status || (bill.amount > (store.purchaseOrders.find((p) => p.id === bill.poId)?.value || 0) ? "Price variance" : "Matched"); bill.status = bill.threeWayStatus === "Matched" ? "Approved for payment" : "Exception review"; const workflow = store.workflows.find((w) => w.type === "Payment approval"); if (workflow) workflow.status = bill.status === "Approved for payment" ? "Approved" : "Pending"; logEvent("PROCUREMENT", "Three-way match reviewed", `${bill.id} · ${bill.threeWayStatus}`); audit("REVIEW", "THREE_WAY_MATCH", bill.id, `PO / GRN / invoice status ${bill.threeWayStatus}`); persist(); return json(res, 200, bill);
+    }
+    if (url.pathname === "/api/actions/bank-reconcile") {
+      const transaction = store.bankTransactions.find((candidate) => candidate.id === payload.bankTransactionId); if (!transaction) return bad(res, "Bank transaction not found");
+      transaction.match = payload.reference || transaction.match; transaction.status = "Matched"; audit("MATCH", "BANK_TRANSACTION", transaction.id, `Matched to ${transaction.match || "manual reconciliation"}`); logEvent("FINANCE", "Bank transaction reconciled", `${transaction.id} · ${transaction.match || "manual match"}`); persist(); return json(res, 200, transaction);
     }
     if (url.pathname === "/api/actions/backup") {
       if (!existsSync(dataDir)) mkdirSync(dataDir, { recursive: true }); persist(); const backupDir = join(dataDir, "backups"); mkdirSync(backupDir, { recursive: true }); const backupPath = join(backupDir, `store-${new Date().toISOString().replaceAll(":", "-")}.json`); copyFileSync(storePath, backupPath); store.lastBackupAt = now(); persist(); audit("BACKUP", "STORE", "local", "Backup snapshot created"); return json(res, 201, { ok: true, lastBackupAt: store.lastBackupAt });
