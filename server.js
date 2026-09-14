@@ -266,7 +266,7 @@ function prd() {
 async function body(req) { let text = ""; for await (const chunk of req) text += chunk; if (!text) return {}; try { return JSON.parse(text); } catch { return null; } }
 function staticFile(req, res) {
   const rawPath = new URL(req.url, "http://localhost").pathname;
-  const requested = rawPath === "/" ? "/index.html" : rawPath;
+  const requested = rawPath === "/" || rawPath === "/shop" || rawPath === "/shop/" ? "/storefront.html" : rawPath === "/operations" || rawPath === "/operations/" ? "/index.html" : rawPath;
   const file = join(publicDir, requested.replace(/^\//, ""));
   if (!file.startsWith(publicDir) || !existsSync(file)) return false;
   const contentTypes = { ".html": "text/html", ".css": "text/css", ".js": "text/javascript", ".svg": "image/svg+xml" };

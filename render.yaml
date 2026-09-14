@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: slns-silk-house
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: SESSION_TTL_HOURS
+        value: "8"

@@ -24,7 +24,7 @@ Write transactions are exposed under `/api/actions`: `receive`, `material-issue`
 npm start
 ```
 
-Open http://localhost:3000. Data is persisted transactionally to the relational SQLite database at `data/slns.sqlite` and is intentionally ignored by Git. The schema uses foreign keys for products, parties, orders, invoices, stock movements, journals and audit events; the same adapter can be moved to PostgreSQL for production.
+Open the web application at `/` for the customer home, or `/operations` for the protected operations workspace. Data is persisted transactionally to the relational SQLite database at `data/slns.sqlite` and is intentionally ignored by Git. The schema uses foreign keys for products, parties, orders, invoices, stock movements, journals and audit events; the same adapter can be moved to PostgreSQL for production.
 
 ### Streamlit entry point
 
