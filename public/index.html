@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#11261f" />
+    <title>SLNS Silk House · Operations</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand"><div class="brand-mark">S</div><div><strong>SLNS</strong><span>Silk House</span></div></div>
+        <div class="workspace-label">WORKSPACE</div>
+        <nav id="nav" class="nav-list">
+          <button class="nav-item active" data-view="control-tower"><span class="nav-icon">⌂</span>Control tower</button>
+          <button class="nav-item" data-view="inventory"><span class="nav-icon">▦</span>Inventory</button>
+          <button class="nav-item" data-view="orders"><span class="nav-icon">◌</span>Orders & CRM</button>
+          <button class="nav-item" data-view="procurement"><span class="nav-icon">⇢</span>Procurement</button>
+          <button class="nav-item" data-view="production"><span class="nav-icon">◒</span>Production</button>
+          <button class="nav-item" data-view="finance"><span class="nav-icon">₹</span>Finance & GST</button>
+          <button class="nav-item" data-view="audit"><span class="nav-icon">≡</span>Audit trail</button>
+        </nav>
+        <div class="sidebar-bottom"><div class="sync-dot"><span></span>All systems operational</div><div class="user-chip"><div class="avatar">PN</div><div><strong>Priya N.</strong><small>Operations lead</small></div><span class="chevron">⌄</span></div></div>
+      </aside>
+      <main class="main">
+        <header class="topbar"><div class="breadcrumbs"><span>SLNS Silk House</span><b>/</b><span id="crumb">Control tower</span></div><div class="top-actions"><button class="icon-button" title="Search">⌕</button><button class="icon-button" title="Notifications">♧<i></i></button><button class="help-button">?</button></div></header>
+        <div id="view" class="content"></div>
+      </main>
+    </div>
+    <div id="toast" class="toast"></div>
+    <script src="/app.js" type="module"></script>
+  </body>
+</html>
