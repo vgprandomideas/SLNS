@@ -103,7 +103,64 @@ function seedStore() {
       { name: "Courier / logistics", status: "Sandbox", mode: "Tracking webhook" },
       { name: "WhatsApp / email", status: "Ready to connect", mode: "Template messages" }
     ],
-    migration: { sourceSystems: ["Excel", "Tally", "Paper registers"], phases: ["Extract", "Clean & deduplicate", "Migrate masters", "Reconcile opening balances", "Parallel verify", "Progressive cutover"], status: "Planning" }
+    migration: { sourceSystems: ["Excel", "Tally", "Paper registers"], phases: ["Extract", "Clean & deduplicate", "Migrate masters", "Reconcile opening balances", "Parallel verify", "Progressive cutover"], status: "Planning" },
+    pieces: [
+      { id: "PIECE-001", sku: "SL-KAN-001", qr: "QR-SL-KAN-001", grade: "A", batch: "KAN-SEP-26-01", weight: "612 g", length: "6.3 m", status: "Available", location: "BIN-BLR-A1" },
+      { id: "PIECE-002", sku: "SL-KAN-001", qr: "QR-SL-KAN-001-B", grade: "B", batch: "KAN-SEP-26-01", weight: "606 g", length: "6.2 m", status: "Reserved", location: "BIN-BLR-A1" },
+      { id: "PIECE-003", sku: "SL-PAI-008", qr: "QR-SL-PAI-008", grade: "A", batch: "PAI-AUG-26-04", weight: "580 g", length: "6.1 m", status: "Available", location: "BIN-BLR-A1" }
+    ],
+    weaverLedgers: [
+      { id: "WL-001", weaver: "Lakshmi Weaver Cluster", gstStatus: "Unregistered", advance: 45000, payable: 78000, dispatches: 4, confirmation: "WhatsApp confirmed" },
+      { id: "WL-002", weaver: "Kanchipuram Weavers Guild", gstStatus: "Registered", advance: 25000, payable: 54000, dispatches: 2, confirmation: "Portal confirmed" }
+    ],
+    channels: [
+      { name: "Wholesale", orders: 18, revenue: 486000, returns: 1, rto: 0, realisedMargin: 38.2 },
+      { name: "Online · prepaid", orders: 31, revenue: 624000, returns: 3, rto: 1, realisedMargin: 32.8 },
+      { name: "Online · COD", orders: 22, revenue: 418000, returns: 4, rto: 6, realisedMargin: 19.4 },
+      { name: "Exhibitions / POS", orders: 14, revenue: 296000, returns: 0, rto: 0, realisedMargin: 41.5 }
+    ],
+    posSyncQueue: [
+      { id: "POS-EVT-0088", device: "Exhibition POS · Bengaluru", createdAt: "2026-09-14T04:20:00.000Z", status: "Synced", idempotencyKey: "pos-0088" },
+      { id: "POS-EVT-0089", device: "Home preview · Priya", createdAt: "2026-09-14T05:10:00.000Z", status: "Pending sync", idempotencyKey: "pos-0089" }
+    ],
+    contentAssets: [
+      { id: "ASSET-001", sku: "SL-KAN-001", name: "Kanchipuram Ruby Zari", photos: 6, altText: true, copyStatus: "Approved", channelStatus: "Live" },
+      { id: "ASSET-002", sku: "SL-BAN-014", name: "Banarasi Midnight Bloom", photos: 2, altText: false, copyStatus: "Draft", channelStatus: "Needs review" },
+      { id: "ASSET-003", sku: "SL-PAI-008", name: "Paithani Parrot Pallu", photos: 0, altText: false, copyStatus: "Missing", channelStatus: "Blocked" }
+    ],
+    seasonality: [
+      { festival: "Diwali", window: "20 Oct - 08 Nov", readiness: 68, leadTimeDays: 28, collections: "Heritage Gold, Nocturne", status: "Prepare now" },
+      { festival: "Pongal", window: "10 - 17 Jan", readiness: 22, leadTimeDays: 35, collections: "Deccan Stories", status: "Planning" },
+      { festival: "Wedding season", window: "Nov - Feb", readiness: 54, leadTimeDays: 42, collections: "All bridal", status: "Monitor" }
+    ],
+    kpis: [
+      { category: "Sales & margin", name: "Realised contribution margin after returns", value: "29.6%", trend: "down 1.8 pts", tone: "warn" },
+      { category: "Inventory", name: "Inventory turnover", value: "2.8x", trend: "on plan", tone: "good" },
+      { category: "Manufacturing", name: "On-time job-work completion", value: "87%", trend: "up 4 pts", tone: "good" },
+      { category: "Working capital", name: "Receivable days (DSO)", value: "34 days", trend: "target < 40", tone: "good" },
+      { category: "Fulfilment", name: "RTO rate", value: "11.6%", trend: "COD needs action", tone: "warn" },
+      { category: "Compliance", name: "GST reconciliation match", value: "98.4%", trend: "2 exceptions", tone: "good" },
+      { category: "Adoption", name: "Transactions through system", value: "91%", trend: "target > 95%", tone: "warn" }
+    ],
+    risks: [
+      { risk: "Over-building custom software", likelihood: "High", impact: "High", mitigation: "Record build-vs-buy decision and pilot configured ERP", owner: "CEO", status: "Open" },
+      { risk: "Poor user adoption / side spreadsheets", likelihood: "High", impact: "High", mitigation: "Training, incentives and adoption KPI", owner: "Operations", status: "Open" },
+      { risk: "RTO erases online margin", likelihood: "Medium", impact: "Medium", mitigation: "NDR aggregator, buyer confirmation, partial COD", owner: "Sales", status: "Mitigating" },
+      { risk: "Customer PII breach", likelihood: "Low", impact: "High", mitigation: "Encryption, MFA, DPDP controls and penetration test", owner: "System Admin", status: "Planned" }
+    ],
+    nfr: { availability: "99.5% business-hours uptime", rpo: "≤ 15 minutes", rto: "≤ 4 hours", response: "≤ 1.5s p95", concurrency: "3× current headcount", retention: "8 years financial/GST", backup: "Daily full + continuous WAL + quarterly restore drill", environments: "Dev / staging / production separated" },
+    privacy: { policy: "Purpose-limited collection", marketingConsent: "Consent captured for WhatsApp/SMS", piiAccess: "Role-restricted", retention: "Retention and deletion policy required", breach: "Breach-notification readiness", payment: "Avoid card storage; provider tokenisation" },
+    buildBuy: [
+      { option: "Configured ERP", bestWhen: "80% standard processes, limited dev capacity", tradeoff: "Saree grading and job-work may need add-ons", recommendation: "Evaluate first" },
+      { option: "ERP + custom add-ons", bestWhen: "Standard core plus distinctive operations", tradeoff: "Two systems to maintain", recommendation: "Likely fit" },
+      { option: "Full custom build", bestWhen: "Process is a competitive moat and dev capacity exists", tradeoff: "Highest cost, time and lifetime ownership", recommendation: "Only with evidence" }
+    ],
+    successTests: [
+      { name: "Traceability", test: "Trace one saree from material to receipt", status: "Ready" },
+      { name: "Financial integrity", test: "Trace every rupee to bank and ledger", status: "Ready" },
+      { name: "Adoption", test: "Staff use system and side spreadsheets disappear", status: "Measure in pilot" },
+      { name: "Resilience", test: "Restore backup and survive primary-server loss", status: "Drill required" }
+    ]
   };
 }
 
@@ -150,6 +207,9 @@ function blueprint() {
     roadmap: ["Foundation + controls", "Procure-to-pay", "Manufacture-to-stock", "Order-to-cash", "Finance + compliance", "Management intelligence", "Customer channels"]
   };
 }
+function enhancements() {
+  return { nfr: store.nfr, privacy: store.privacy, pieces: store.pieces, weaverLedgers: store.weaverLedgers, channels: store.channels, posSyncQueue: store.posSyncQueue, contentAssets: store.contentAssets, seasonality: store.seasonality, kpis: store.kpis, risks: store.risks, buildBuy: store.buildBuy, successTests: store.successTests };
+}
 async function body(req) { let text = ""; for await (const chunk of req) text += chunk; if (!text) return {}; try { return JSON.parse(text); } catch { return null; } }
 function staticFile(req, res) {
   const rawPath = new URL(req.url, "http://localhost").pathname;
@@ -166,6 +226,7 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === "/api/health") return json(res, 200, { ok: true, service: "slns-platform", version: "0.1.0", time: now() });
     if (url.pathname === "/api/summary") return json(res, 200, summary());
     if (url.pathname === "/api/blueprint") return json(res, 200, blueprint());
+    if (url.pathname === "/api/enhancements") return json(res, 200, enhancements());
     if (url.pathname === "/api/masters") return json(res, 200, { organisation: store.organisation, products: store.products, customers: store.customers, vendors: store.vendors, locations: store.locations, roles: store.roles, integrations: store.integrations, migration: store.migration });
     if (url.pathname === "/api/products") return json(res, 200, store.products.map((p) => ({ ...p, available: available(p) })));
     if (url.pathname === "/api/costing") return json(res, 200, store.products.filter((p) => p.category !== "Raw material").map((p) => { const components = [{ name: "Silk / yarn", value: Math.round(p.trueCost * 0.34) }, { name: "Zari", value: Math.round(p.trueCost * 0.13) }, { name: "Dyeing + weaving", value: Math.round(p.trueCost * 0.28) }, { name: "Job work + finishing", value: Math.round(p.trueCost * 0.17) }, { name: "Packaging + freight + overhead", value: Math.round(p.trueCost * 0.08) }]; return { sku: p.sku, name: p.name, trueCost: p.trueCost, price: p.price, contributionMargin: p.price - p.trueCost - Math.round(p.price * 0.05), components }; }));
@@ -180,6 +241,8 @@ const server = http.createServer(async (req, res) => {
       ...store.purchaseOrders.filter((p) => p.status === "Overdue").map((p) => ({ severity: "high", title: "Purchase order overdue", detail: `${p.id} · ${p.vendor}`, action: "Follow up vendor" })),
       ...store.products.filter((p) => available(p) <= p.reorderLevel).map((p) => ({ severity: "medium", title: "Stock below reorder level", detail: `${p.name} · ${available(p)} ${p.unit} available`, action: "Create requisition" })),
       ...store.production.filter((p) => p.status === "Awaiting QC").map((p) => ({ severity: "medium", title: "QC inspection pending", detail: `${p.product} · ${p.id}`, action: "Open QC queue" })),
+      { severity: "medium", title: "Festival readiness below plan", detail: "Diwali · 68% ready with 28-day lead time", action: "Review collection plan" },
+      { severity: "high", title: "COD RTO above margin threshold", detail: "Online COD · 27% RTO this month", action: "Open NDR queue" },
       { severity: "low", title: "Receivable approaching due", detail: "Kaveri Collective · ₹22,600", action: "Review account" }
     ]);
     if (url.pathname === "/api/finance") return json(res, 200, { receivables: store.customers, payables: store.purchaseOrders, cash: summary().cash, tax: { input: 32400, output: 68400, pendingReconciliation: 2 } });
@@ -274,6 +337,21 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === "/api/actions/approve") {
       const workflow = store.workflows.find((w) => w.id === payload.workflowId); if (!workflow) return bad(res, "Workflow task not found");
       workflow.status = payload.status === "Rejected" ? "Rejected" : "Approved"; audit("APPROVE", "WORKFLOW", workflow.id, `${workflow.type} marked ${workflow.status}`); persist(); return json(res, 200, workflow);
+    }
+    if (url.pathname === "/api/actions/pos-sync") {
+      const event = store.posSyncQueue.find((p) => p.id === payload.eventId); if (!event) return bad(res, "POS event not found");
+      if (event.status === "Synced") return json(res, 200, { event, idempotent: true });
+      event.status = "Synced"; event.syncedAt = now(); logEvent("POS", "Offline POS event synced", `${event.id} · ${event.device}`); audit("SYNC", "POS_EVENT", event.id, `Idempotency key ${event.idempotencyKey}`); persist(); return json(res, 200, { event, idempotent: false });
+    }
+    if (url.pathname === "/api/actions/weaver-advance") {
+      const ledger = store.weaverLedgers.find((w) => w.id === payload.weaverId); const amount = Number(payload.amount);
+      if (!ledger || !Number.isFinite(amount) || amount <= 0) return bad(res, "Choose a weaver and a positive advance amount");
+      ledger.advance += amount; const paymentId = id("ADV").toUpperCase(); store.payments.unshift({ id: paymentId, vendor: ledger.weaver, amount, type: "Weaver advance", status: "Posted", paidAt: now() }); store.journalEntries.unshift({ id: id("JE").toUpperCase(), reference: paymentId, description: `Weaver advance · ${ledger.weaver}`, debit: "Weaver advances", credit: "Bank / cash", amount, status: "Posted" }); logEvent("PROCUREMENT", "Weaver advance posted", `${ledger.weaver} · ${amount}`); audit("POST", "WEAVER_ADVANCE", paymentId, `Advance posted for ${ledger.id}`); persist(); return json(res, 201, { paymentId, ledger });
+    }
+    if (url.pathname === "/api/actions/content") {
+      const asset = store.contentAssets.find((a) => a.id === payload.assetId); if (!asset) return bad(res, "Content asset not found");
+      if (payload.photos !== undefined) asset.photos = Math.max(0, Number(payload.photos)); if (payload.altText !== undefined) asset.altText = Boolean(payload.altText); if (payload.copyStatus) asset.copyStatus = payload.copyStatus; if (payload.channelStatus) asset.channelStatus = payload.channelStatus;
+      audit("UPDATE", "CONTENT_ASSET", asset.id, `Content status updated for ${asset.sku}`); persist(); return json(res, 200, asset);
     }
     return json(res, 404, { error: "Not found" });
   }
