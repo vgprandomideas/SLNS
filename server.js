@@ -1,24 +1,31 @@
 import http from "node:http";
 import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, extname, join } from "node:path";
+import { dirname, extname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { randomUUID } from "node:crypto";
+import { randomUUID, scryptSync, timingSafeEqual } from "node:crypto";
+import { loadRelationalStore, openDatabase, persistRelationalStore } from "./db.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const publicDir = join(__dirname, "public");
 const dataDir = join(__dirname, "data");
 const storePath = join(dataDir, "store.json");
+const dbPath = process.env.DATABASE_PATH ? resolve(process.env.DATABASE_PATH) : join(dataDir, "slns.sqlite");
 const port = Number(process.env.PORT || 3000);
+const db = openDatabase(dbPath);
 const now = () => new Date().toISOString();
 const id = (prefix) => `${prefix}-${randomUUID().slice(0, 8)}`;
+const passwordSalt = "slns-local-demo-salt";
+const hashPassword = (password) => scryptSync(password, passwordSalt, 32).toString("hex");
+const verifyPassword = (password, hash) => { try { return timingSafeEqual(Buffer.from(hashPassword(password), "hex"), Buffer.from(hash, "hex")); } catch { return false; } };
+const demoPasswordFor = { priya: "slns-demo-owner", arjun: "slns-demo-finance", ravi: "slns-demo-warehouse" };
 
 function seedStore() {
   return {
     organisation: { name: "SLNS Silk House", legalEntity: "SLNS Silk House Private Limited", gstin: "29AABCS1234F1ZP", currency: "INR", branches: ["Bengaluru HQ", "Kanchipuram Workshop"] },
     users: [
-      { id: "USR-OWNER", name: "Priya N.", username: "priya", role: "Owner / Board", permissions: ["*"] },
-      { id: "USR-FINANCE", name: "Arjun Rao", username: "arjun", role: "CFO / Finance Head", permissions: ["read", "finance:write", "approve:write"] },
-      { id: "USR-WAREHOUSE", name: "Ravi K.", username: "ravi", role: "Warehouse", permissions: ["read", "inventory:write", "production:write"] }
+      { id: "USR-OWNER", name: "Priya N.", username: "priya", passwordHash: hashPassword("slns-demo-owner"), role: "Owner / Board", permissions: ["*"] },
+      { id: "USR-FINANCE", name: "Arjun Rao", username: "arjun", passwordHash: hashPassword("slns-demo-finance"), role: "CFO / Finance Head", permissions: ["read", "finance:write", "approve:write"] },
+      { id: "USR-WAREHOUSE", name: "Ravi K.", username: "ravi", passwordHash: hashPassword("slns-demo-warehouse"), role: "Warehouse", permissions: ["read", "inventory:write", "production:write"] }
     ],
     products: [
       { id: "SKU-KANCHI-001", sku: "SL-KAN-001", name: "Kanchipuram Ruby Zari", collection: "Heritage Gold", category: "Kanchipuram Silk", material: "Mulberry silk", design: "Temple checks", colour: "Ruby", zari: "Pure zari", trueCost: 18400, price: 28900, gstRate: 5, reorderLevel: 3, onHand: 8, reserved: 1, unit: "piece" },
@@ -187,6 +194,9 @@ function seedStore() {
     notifications: [{ id: "NTF-001", channel: "In-app", event: "RTO threshold breached", recipient: "Sales Head", status: "Unread" }, { id: "NTF-002", channel: "WhatsApp", event: "Dispatch confirmation", recipient: "Kaveri Collective", status: "Queued" }],
     documents: [{ id: "DOC-001", type: "QC report", reference: "QC-2026-0042", filename: "qc-banarasi-0017.pdf", storage: "object://slns-demo/qc-banarasi-0017.pdf", status: "Available" }],
     rtoNdr: [{ id: "NDR-0041", orderId: "SO-2026-0040", channel: "Online · COD", pincode: "400001", reason: "Customer unavailable", attempt: 1, action: "Buyer confirmation pending", status: "Open" }],
+    returns: [{ id: "RET-2026-0002", orderId: "SO-2026-0039", productId: "SKU-BANARAS-014", qty: 1, reason: "Colour preference", status: "QC pending", creditNoteId: null, createdAt: "2026-09-14T06:00:00.000Z" }],
+    outbox: [{ id: "OUT-001", event: "invoice.created", reference: "INV-2026-0041", destination: "GST provider", attempts: 0, status: "Pending adapter" }],
+    integrationFailures: [{ id: "IF-001", provider: "Courier sandbox", event: "shipment.tracking", reference: "PKG-2026-0040", attempts: 2, nextRetry: "2026-09-14T07:00:00.000Z", status: "Retry queued" }],
     prdAcceptance: [
       { id: "AC-01", area: "Master data + organisation", criterion: "Every active finished saree and party has a canonical record", status: "Ready" },
       { id: "AC-02", area: "Procure-to-pay", criterion: "PO → GRN → QC → three-way match → vendor payment", status: "In progress" },
@@ -200,20 +210,20 @@ function seedStore() {
 
 function loadStore() {
   const defaults = seedStore();
-  if (!existsSync(storePath)) return defaults;
-  try {
-    const saved = JSON.parse(readFileSync(storePath, "utf8"));
-    return { ...defaults, ...saved, products: saved.products || defaults.products, customers: saved.customers || defaults.customers, orders: saved.orders || defaults.orders, events: saved.events || defaults.events, audit: saved.audit || defaults.audit };
-  } catch { return defaults; }
+  return loadRelationalStore(db, defaults, storePath);
 }
 let store = loadStore();
 const sessions = new Map();
-const demoPasswords = { priya: "slns-demo-owner", arjun: "slns-demo-finance", ravi: "slns-demo-warehouse" };
-function persist() { mkdirSync(dataDir, { recursive: true }); writeFileSync(storePath, JSON.stringify(store, null, 2)); }
+store.products = (store.products || []).map((product) => ({ ...product, designCode: product.designCode || product.sku, border: product.border || "Handwoven contrast", pallu: product.pallu || "Woven pallu", blouseDetails: product.blouseDetails || "Unstitched blouse piece", mrp: product.mrp || product.price, retailPrice: product.retailPrice || product.price, wholesalePrice: product.wholesalePrice || Math.round(product.price * 0.85), barcode: product.barcode || `890${product.sku.replace(/\D/g, "").slice(-9).padStart(9, "0")}`, qr: product.qr || `QR-${product.sku}`, photos: product.photos || [], active: product.active !== false }));
+store.users = (store.users || []).map((user) => ({ ...user, passwordHash: user.passwordHash || hashPassword(demoPasswordFor[user.username] || randomUUID()) }));
+const loginAttempts = new Map();
+const storefrontRequests = new Map();
+function persist() { mkdirSync(dataDir, { recursive: true }); persistRelationalStore(db, store); }
+if (!db.prepare("SELECT 1 FROM meta WHERE key = 'snapshot'").get()) persist();
 const json = (res, status, body) => { res.writeHead(status, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff", "Referrer-Policy": "same-origin" }); res.end(JSON.stringify(body)); };
 const bad = (res, message) => json(res, 400, { error: message });
 const available = (product) => product.onHand - product.reserved;
-function currentUser(req) { const header = req.headers.authorization || ""; const token = header.startsWith("Bearer ") ? header.slice(7) : ""; return sessions.get(token); }
+function currentUser(req) { const header = req.headers.authorization || ""; const token = header.startsWith("Bearer ") ? header.slice(7) : ""; const session = sessions.get(token); if (session && session.expiresAt < Date.now()) { sessions.delete(token); return null; } return session; }
 function requireAuth(req, res) { const user = currentUser(req); if (!user) { json(res, 401, { error: "Authentication required" }); return null; } return user; }
 function can(user, permission) { return Boolean(user && (user.permissions?.includes("*") || user.permissions?.includes(permission))); }
 function requirePermission(req, res, permission) { const user = requireAuth(req, res); if (!user) return null; if (!can(user, permission)) { json(res, 403, { error: `Role ${user.role} cannot perform ${permission}` }); return null; } return user; }
@@ -260,7 +270,7 @@ function staticFile(req, res) {
   const file = join(publicDir, requested.replace(/^\//, ""));
   if (!file.startsWith(publicDir) || !existsSync(file)) return false;
   const contentTypes = { ".html": "text/html", ".css": "text/css", ".js": "text/javascript", ".svg": "image/svg+xml" };
-  res.writeHead(200, { "Content-Type": `${contentTypes[extname(file)] || "application/octet-stream"}; charset=utf-8` }); res.end(readFileSync(file)); return true;
+  res.writeHead(200, { "Content-Type": `${contentTypes[extname(file)] || "application/octet-stream"}; charset=utf-8`, "X-Content-Type-Options": "nosniff", "X-Frame-Options": "DENY", "Referrer-Policy": "same-origin", "Content-Security-Policy": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:" }); res.end(readFileSync(file)); return true;
 }
 
 const server = http.createServer(async (req, res) => {
@@ -268,12 +278,14 @@ const server = http.createServer(async (req, res) => {
   if (req.method === "GET" && url.pathname.startsWith("/api/")) {
     if (url.pathname === "/api/auth/me") { const user = currentUser(req); return user ? json(res, 200, { user }) : json(res, 401, { error: "Authentication required" }); }
     if (url.pathname === "/api/health") return json(res, 200, { ok: true, service: "slns-platform", version: "0.1.0", time: now() });
+    if (url.pathname === "/api/storefront/products") return json(res, 200, store.products.filter((p) => p.category !== "Raw material" && available(p) > 0).map((p) => ({ id: p.id, sku: p.sku, name: p.name, collection: p.collection, price: p.price, available: available(p), qr: p.qr || `QR-${p.sku}` })));
     if (!requireAuth(req, res)) return;
     if (url.pathname === "/api/summary") return json(res, 200, summary());
     if (url.pathname === "/api/blueprint") return json(res, 200, blueprint());
     if (url.pathname === "/api/enhancements") return json(res, 200, enhancements());
     if (url.pathname === "/api/prd") return json(res, 200, prd());
     if (url.pathname === "/api/masters") return json(res, 200, { organisation: store.organisation, products: store.products, customers: store.customers, vendors: store.vendors, locations: store.locations, roles: store.roles, integrations: store.integrations, migration: store.migration });
+    if (url.pathname === "/api/users") return json(res, 200, store.users.map(({ passwordHash, ...user }) => user));
     if (url.pathname === "/api/products") return json(res, 200, store.products.map((p) => ({ ...p, available: available(p) })));
     if (url.pathname === "/api/costing") return json(res, 200, store.products.filter((p) => p.category !== "Raw material").map((p) => { const components = [{ name: "Silk / yarn", value: Math.round(p.trueCost * 0.34) }, { name: "Zari", value: Math.round(p.trueCost * 0.13) }, { name: "Dyeing + weaving", value: Math.round(p.trueCost * 0.28) }, { name: "Job work + finishing", value: Math.round(p.trueCost * 0.17) }, { name: "Packaging + freight + overhead", value: Math.round(p.trueCost * 0.08) }]; return { sku: p.sku, name: p.name, trueCost: p.trueCost, price: p.price, contributionMargin: p.price - p.trueCost - Math.round(p.price * 0.05), components }; }));
     if (url.pathname === "/api/orders") return json(res, 200, store.orders);
@@ -287,8 +299,10 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === "/api/banking") return json(res, 200, { accounts: ["HDFC Current · 4421", "ICICI Collections · 1180"], transactions: store.bankTransactions, unmatched: store.bankTransactions.filter((t) => t.status === "Unmatched") });
     if (url.pathname === "/api/notifications") return json(res, 200, store.notifications);
     if (url.pathname === "/api/documents") return json(res, 200, store.documents);
+    if (url.pathname === "/api/integrations") return json(res, 200, { providers: store.integrations, outbox: store.outbox, failures: store.integrationFailures });
     if (url.pathname === "/api/search") { const q = (url.searchParams.get("q") || "").trim().toLowerCase(); if (!q) return json(res, 200, []); const sources = [["Product", store.products], ["Customer", store.customers], ["Vendor", store.vendors], ["Order", store.orders], ["Invoice", store.invoices], ["Shipment", store.shipments], ["Production", store.production], ["Payment", store.payments]]; const results = sources.flatMap(([type, rows]) => rows.filter((row) => JSON.stringify(row).toLowerCase().includes(q)).slice(0, 10).map((row) => ({ type, id: row.id, label: row.name || row.product || row.customer || row.vendor || row.description || row.orderId || row.invoiceId || row.type, data: row }))); return json(res, 200, results.slice(0, 50)); }
     if (url.pathname === "/api/logistics") return json(res, 200, { invoices: store.invoices, shipments: store.shipments, receipts: store.receipts });
+    if (url.pathname === "/api/returns") return json(res, 200, store.returns);
     if (url.pathname === "/api/events") return json(res, 200, store.events);
     if (url.pathname === "/api/alerts") return json(res, 200, [
       ...store.purchaseOrders.filter((p) => p.status === "Overdue").map((p) => ({ severity: "high", title: "Purchase order overdue", detail: `${p.id} · ${p.vendor}`, action: "Follow up vendor" })),
@@ -309,9 +323,16 @@ const server = http.createServer(async (req, res) => {
   if (req.method === "POST" && url.pathname.startsWith("/api/")) {
     const payload = await body(req); if (payload === null) return bad(res, "Request body must be valid JSON");
     if (url.pathname === "/api/auth/login") {
-      const user = store.users.find((candidate) => candidate.username === payload.username && demoPasswords[candidate.username] === payload.password);
-      if (!user) return json(res, 401, { error: "Invalid demo credentials" });
-      const token = randomUUID(); sessions.set(token, user); return json(res, 200, { token, user });
+      const attempt = loginAttempts.get(payload.username) || { count: 0, blockedUntil: 0 }; if (attempt.blockedUntil > Date.now()) return json(res, 429, { error: "Too many attempts; try again later" });
+      const user = store.users.find((candidate) => candidate.username === payload.username && verifyPassword(payload.password || "", candidate.passwordHash));
+      if (!user) { attempt.count += 1; if (attempt.count >= 5) attempt.blockedUntil = Date.now() + 15 * 60 * 1000; loginAttempts.set(payload.username, attempt); return json(res, 401, { error: "Invalid demo credentials" }); }
+      loginAttempts.delete(payload.username); const token = randomUUID(); const sessionHours = Number(process.env.SESSION_TTL_HOURS || 8); sessions.set(token, { ...user, expiresAt: Date.now() + sessionHours * 60 * 60 * 1000 }); return json(res, 200, { token, user });
+    }
+    if (url.pathname === "/api/storefront/orders") {
+      const client = req.socket.remoteAddress || "unknown"; const recent = storefrontRequests.get(client) || []; const fresh = recent.filter((timestamp) => Date.now() - timestamp < 60 * 60 * 1000); if (fresh.length >= 30) return json(res, 429, { error: "Storefront rate limit exceeded" }); storefrontRequests.set(client, [...fresh, Date.now()]);
+      const product = store.products.find((candidate) => candidate.id === payload.productId); const qty = Number(payload.qty); const customerName = String(payload.customerName || "").trim(); if (!product || !customerName || !Number.isFinite(qty) || qty <= 0 || available(product) < qty) return bad(res, "Choose an available product, customer name and valid quantity");
+      let customer = store.customers.find((candidate) => candidate.email && candidate.email === payload.email); if (!customer) { customer = { id: id("CUS").toUpperCase(), name: customerName, type: "Online", city: payload.city || "India", email: payload.email || null, creditLimit: 0, outstanding: 0, marketingConsent: Boolean(payload.marketingConsent) }; store.customers.push(customer); }
+      product.reserved += qty; const orderId = `WEB-${new Date().getFullYear()}-${String(store.orders.length + 1).padStart(4, "0")}`; const order = { id: orderId, customerId: customer.id, customer: customer.name, channel: "Website", productId: product.id, product: product.name, qty, value: product.price * qty, status: "Ready to dispatch", paymentMode: payload.paymentMode || "Prepaid", createdAt: now() }; store.orders.unshift(order); const transactionId = id("RES").toUpperCase(); store.stockMovements.unshift({ id: id("MOV").toUpperCase(), transactionId, type: "RESERVATION", productId: product.id, product: product.name, qty, unit: product.unit, user: "Storefront", occurredAt: now(), note: `Website order ${orderId}` }); logEvent("SALE", "Website order received", `${orderId} · ${customer.name}`); audit("CREATE", "WEB_ORDER", orderId, `Reserved ${qty} ${product.sku}`); persist(); return json(res, 201, { orderId, transactionId, status: order.status });
     }
     const permission = url.pathname.includes("/actions/approve") ? "approve:write" : url.pathname.includes("/actions/receipt") || url.pathname.includes("/actions/vendor-payment") || url.pathname.includes("/actions/weaver-advance") || url.pathname.includes("/actions/bank-reconcile") || url.pathname.includes("/actions/three-way-match") ? "finance:write" : url.pathname.includes("/actions/order") || url.pathname.includes("/actions/invoice") || url.pathname.includes("/actions/dispatch") || url.pathname.includes("/actions/return") ? "sales:write" : "inventory:write";
     const user = requirePermission(req, res, permission); if (!user) return;
@@ -392,10 +413,17 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === "/api/actions/return") {
       const order = store.orders.find((o) => o.id === payload.orderId); const product = order && store.products.find((p) => p.id === order.productId); const qty = Number(payload.qty || order?.qty);
       if (!order || !product || !Number.isFinite(qty) || qty <= 0 || qty > order.qty) return bad(res, "Choose a valid order and return quantity");
-      product.onHand += qty; order.status = "Returned"; const creditNoteId = `CN-${new Date().getFullYear()}-${String(store.invoices.length + 1).padStart(4, "0")}`; const transactionId = id("RET").toUpperCase();
-      store.stockMovements.unshift({ id: id("MOV").toUpperCase(), transactionId, type: "RETURN", productId: product.id, product: product.name, qty, unit: product.unit, user: payload.user || "Demo User", occurredAt: now(), note: payload.reason || "Customer return" });
-      store.gstLedger.unshift({ id: id("GST").toUpperCase(), reference: creditNoteId, direction: "Adjustment", hsn: "5007", rate: 5, taxableValue: Math.round((product.price * qty) / 1.05), tax: Math.round((product.price * qty) - (product.price * qty) / 1.05), status: "Ready for return" });
-      logEvent("SALE", "Return and credit note posted", `${creditNoteId} · ${order.id}`); audit("POST", "CREDIT_NOTE", creditNoteId, `Returned ${qty} ${product.sku}`); persist(); return json(res, 201, { creditNoteId, transactionId });
+      const returnId = id("RET").toUpperCase(); const transactionId = id("RET").toUpperCase(); const returnRequest = { id: returnId, orderId: order.id, productId: product.id, qty, reason: payload.reason || "Customer return", status: "QC pending", creditNoteId: null, createdAt: now() };
+      store.returns.unshift(returnRequest); product.returned = (product.returned || 0) + qty; order.status = "Return inspection";
+      store.stockMovements.unshift({ id: id("MOV").toUpperCase(), transactionId, type: "RETURN_RECEIVED", productId: product.id, product: product.name, qty: 0, unit: product.unit, user: payload.user || "Demo User", occurredAt: now(), note: `${returnId} awaiting QC` });
+      logEvent("SALE", "Return received for inspection", `${returnId} · ${order.id}`); audit("POST", "RETURN_REQUEST", returnId, `Received ${qty} ${product.sku}; not sellable until QC`); persist(); return json(res, 201, { returnId, transactionId, status: returnRequest.status });
+    }
+    if (url.pathname === "/api/actions/return-qc") {
+      const request = store.returns.find((candidate) => candidate.id === payload.returnId); const product = request && store.products.find((p) => p.id === request.productId);
+      if (!request || !product || !["Accepted", "Rejected"].includes(payload.status)) return bad(res, "Choose a return and Accepted or Rejected");
+      product.returned = Math.max(0, (product.returned || 0) - request.qty); request.status = payload.status === "Accepted" ? "Accepted - restocked" : "Rejected - damaged"; if (payload.status === "Accepted") product.onHand += request.qty;
+      const creditNoteId = `CN-${new Date().getFullYear()}-${String(store.invoices.length + 1).padStart(4, "0")}`; request.creditNoteId = creditNoteId; store.gstLedger.unshift({ id: id("GST").toUpperCase(), reference: creditNoteId, direction: "Adjustment", hsn: "5007", rate: 5, taxableValue: Math.round((product.price * request.qty) / 1.05), tax: Math.round((product.price * request.qty) - (product.price * request.qty) / 1.05), status: "Ready for return" });
+      logEvent("QC", `Return ${payload.status.toLowerCase()}`, `${request.id} · ${product.name}`); audit("APPROVE", "RETURN_QC", request.id, `${request.status}; ${creditNoteId}`); persist(); return json(res, 200, request);
     }
     if (url.pathname === "/api/actions/approve") {
       const workflow = store.workflows.find((w) => w.id === payload.workflowId); if (!workflow) return bad(res, "Workflow task not found");
@@ -430,7 +458,7 @@ const server = http.createServer(async (req, res) => {
       transaction.match = payload.reference || transaction.match; transaction.status = "Matched"; audit("MATCH", "BANK_TRANSACTION", transaction.id, `Matched to ${transaction.match || "manual reconciliation"}`); logEvent("FINANCE", "Bank transaction reconciled", `${transaction.id} · ${transaction.match || "manual match"}`); persist(); return json(res, 200, transaction);
     }
     if (url.pathname === "/api/actions/backup") {
-      if (!existsSync(dataDir)) mkdirSync(dataDir, { recursive: true }); persist(); const backupDir = join(dataDir, "backups"); mkdirSync(backupDir, { recursive: true }); const backupPath = join(backupDir, `store-${new Date().toISOString().replaceAll(":", "-")}.json`); copyFileSync(storePath, backupPath); store.lastBackupAt = now(); persist(); audit("BACKUP", "STORE", "local", "Backup snapshot created"); return json(res, 201, { ok: true, lastBackupAt: store.lastBackupAt });
+      if (!existsSync(dataDir)) mkdirSync(dataDir, { recursive: true }); persist(); const backupDir = join(dataDir, "backups"); mkdirSync(backupDir, { recursive: true }); const backupPath = join(backupDir, `slns-${new Date().toISOString().replaceAll(":", "-")}.sqlite`); copyFileSync(dbPath, backupPath); store.lastBackupAt = now(); persist(); audit("BACKUP", "STORE", "local", "Relational database backup snapshot created"); return json(res, 201, { ok: true, lastBackupAt: store.lastBackupAt, path: backupPath });
     }
     return json(res, 404, { error: "Not found" });
   }

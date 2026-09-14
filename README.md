@@ -24,7 +24,7 @@ Write transactions are exposed under `/api/actions`: `receive`, `material-issue`
 npm start
 ```
 
-Open http://localhost:3000. Data is persisted to `data/store.json` after the first transaction and is intentionally ignored by Git.
+Open http://localhost:3000. Data is persisted transactionally to the relational SQLite database at `data/slns.sqlite` and is intentionally ignored by Git. The schema uses foreign keys for products, parties, orders, invoices, stock movements, journals and audit events; the same adapter can be moved to PostgreSQL for production.
 
 Local demo sign-in is enabled with role-specific accounts: `priya` / `slns-demo-owner`, `arjun` / `slns-demo-finance`, or `ravi` / `slns-demo-warehouse`. The API enforces bearer sessions and write permissions; replace these demo credentials with an identity provider, MFA and managed secrets before production.
 
@@ -34,4 +34,4 @@ Local demo sign-in is enabled with role-specific accounts: `priya` / `slns-demo-
 npm test
 ```
 
-This is a foundation release rather than a production compliance claim. Before go-live, connect a managed PostgreSQL database, identity provider, backups, GST/e-invoice provider, payment gateway and logistics provider; then complete statutory and security review.
+The local release includes safe demo/sandbox adapters, not live provider credentials. Before go-live, move the relational adapter to managed PostgreSQL, connect an identity provider with MFA, configure GST/e-invoice, bank, payment, logistics and messaging providers, enable managed object storage and TLS, then complete statutory, restore, load and security review.
