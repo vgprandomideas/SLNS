@@ -152,7 +152,7 @@ def login_panel():
             st.rerun()
         return
     with st.sidebar.form("login"):
-        username = st.text_input("Username", value="priya")
+        username = st.text_input("Username", value="SLNS")
         password = st.text_input("Password", type="password")
         submitted = st.form_submit_button("Sign in")
     if submitted:

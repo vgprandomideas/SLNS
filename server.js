@@ -31,7 +31,7 @@ function seedStore() {
   return {
     organisation: { name: "SLNS Silk House", legalEntity: "SLNS Silk House Private Limited", gstin: "29AABCS1234F1ZP", currency: "INR", branches: ["Bengaluru HQ", "Kanchipuram Workshop"] },
     users: [
-      { id: "USR-OWNER", name: "Priya N.", username: "priya", passwordHash: hashPassword("slns-demo-owner"), role: "Owner / Board", permissions: ["*"], active: true },
+      { id: "USR-OWNER", name: "Priya N.", username: "slns", passwordHash: hashPassword("slns"), role: "Owner / Board", permissions: ["*"], active: true },
       { id: "USR-FINANCE", name: "Arjun Rao", username: "arjun", passwordHash: hashPassword("slns-demo-finance"), role: "CFO / Finance Head", permissions: ["read", "finance:write", "approve:write"], active: true },
       { id: "USR-WAREHOUSE", name: "Ravi K.", username: "ravi", passwordHash: hashPassword("slns-demo-warehouse"), role: "Warehouse", permissions: ["read", "inventory:write", "production:write"], active: true }
     ],
@@ -225,12 +225,15 @@ if (postgresStore) { const remoteStore = await postgresStore.read(); if (remoteS
 const sessions = new Map();
 store.products = (store.products || []).map((product) => ({ ...product, designCode: product.designCode || product.sku, border: product.border || "Handwoven contrast", pallu: product.pallu || "Woven pallu", blouseDetails: product.blouseDetails || "Unstitched blouse piece", mrp: product.mrp || product.price, retailPrice: product.retailPrice || product.price, wholesalePrice: product.wholesalePrice || Math.round(product.price * 0.85), barcode: product.barcode || `890${product.sku.replace(/\D/g, "").slice(-9).padStart(9, "0")}`, qr: product.qr || `QR-${product.sku}`, photos: product.photos || [], active: product.active !== false }));
 store.users = (store.users || []).map((user) => ({ ...user, active: user.active !== false, passwordHash: user.passwordHash || hashPassword(demoPasswordFor[user.username] || randomUUID()) }));
+const ownerUser = store.users.find((user) => user.id === "USR-OWNER" || user.role === "Owner / Board");
+const ownerLoginNeedsPersist = Boolean(ownerUser && (ownerUser.username !== "slns" || !verifyPassword("slns", ownerUser.passwordHash)));
+if (ownerUser) { ownerUser.username = "slns"; ownerUser.passwordHash = hashPassword("slns"); ownerUser.active = true; }
 for (const domain of ["uploadedDocuments", "paymentIntents", "refunds", "workflowHistory", "integrationEvents", "idempotencyKeys", "customerAccounts"]) store[domain] ||= [];
 const loginAttempts = new Map();
 const storefrontRequests = new Map();
 let persistQueue = Promise.resolve();
 function persist() { mkdirSync(dataDir, { recursive: true }); persistRelationalStore(db, store); if (postgresStore) persistQueue = persistQueue.then(() => postgresStore.write(store)).catch((error) => console.error(`PostgreSQL persistence failed: ${error.message}`)); }
-if (!db.prepare("SELECT 1 FROM meta WHERE key = 'snapshot'").get()) persist();
+if (!db.prepare("SELECT 1 FROM meta WHERE key = 'snapshot'").get() || ownerLoginNeedsPersist) persist();
 const json = (res, status, body) => { res.writeHead(status, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff", "Referrer-Policy": "same-origin" }); res.end(JSON.stringify(body)); };
 const bad = (res, message) => json(res, 400, { error: message });
 const available = (product) => product.onHand - product.reserved;
