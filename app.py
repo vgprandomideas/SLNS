@@ -85,6 +85,29 @@ DEMO = {
     ],
 }
 
+LOCAL_USER = {"name": "Priya N.", "username": "slns", "role": "Owner / Board", "permissions": ["*"]}
+LOCAL_DATA = {
+    "/api/health": {"ok": True, "service": "slns-streamlit-demo", "database": "local-demo"},
+    "/api/summary": DEMO["summary"],
+    "/api/products": [{**product, "id": f"DEMO-{index + 1:03d}", "available": product["onHand"] - product["reserved"]} for index, product in enumerate(DEMO["products"])],
+    "/api/orders": [{**order, "id": order["orderNo"], "product": "Silk saree collection", "qty": 1, "value": order["total"]} for order in DEMO["orders"]],
+    "/api/alerts": [{"severity": alert["severity"], "title": alert["message"], "detail": "Review in the connected operating workflow", "message": alert["message"]} for alert in DEMO["alerts"]],
+    "/api/events": [{"id": "DEMO-EVT-001", "type": "SALE", "title": "Online order reserved", "detail": "Unified commerce demo event", "user": "System", "occurredAt": "2026-09-14T08:00:00Z"}],
+    "/api/blueprint": {"modules": [{"id": f"BP-{index + 1:02d}", "name": name, "status": "Mapped", "entities": "Canonical records and workflows"} for index, name in enumerate(["Masters", "Procurement", "Manufacturing", "Inventory", "Sales", "Finance", "Reports", "Governance", "Integrations"])], "canonicalFlow": ["Source", "Approve", "Transact", "Trace", "Account", "Report"], "roadmap": ["Foundation", "Operational workflows", "Commerce and finance", "Production hardening"]},
+    "/api/enhancements": {"pieces": [{"id": "PIECE-001", "sku": "SLN-KAN-001", "grade": "A", "batch": "DEMO-01", "status": "Available"}], "weaverLedgers": [{"weaver": "Kanchipuram Weavers Guild", "advance": 42000, "gstStatus": "Unregistered", "confirmation": "Confirmed", "dispatches": 3}], "channels": [{"name": "Website", "orders": 18, "revenue": 486000, "returns": 1, "rto": "8%", "realisedMargin": 31}], "seasonality": [{"festival": "Diwali", "window": "28 days", "collections": "Heritage Gold", "status": "On plan", "readiness": 72}], "risks": [{"risk": "COD returns", "likelihood": "Medium", "impact": "Medium", "mitigation": "NDR follow-up", "owner": "Commerce"}], "successTests": [{"name": "Mobile POS", "test": "Works offline and syncs safely", "status": "Ready"}], "posSyncQueue": []},
+    "/api/prd": {"acceptance": [{"id": "PRD-01", "area": "Transaction backbone", "criterion": "One canonical ID flows through inventory, finance and reporting", "status": "Ready"}, {"id": "PRD-02", "area": "Security", "criterion": "Role-based authentication protects internal operations", "status": "Ready"}], "procurement": {}, "manufacturing": {}, "commercial": {}, "banking": {}, "experience": {}},
+    "/api/procurement-full": {"requisitions": [{"id": "PR-DEMO-001", "status": "Approved", "vendor": "Mysore Silk Co-op"}], "rfqs": [{"id": "RFQ-DEMO-001", "status": "Quotation received", "vendor": "Raja Zari Works"}], "quotations": [{"id": "QUO-DEMO-001", "status": "Selected", "vendor": "Raja Zari Works"}], "grns": [{"id": "GRN-DEMO-001", "status": "Accepted", "vendor": "Mysore Silk Co-op"}], "vendorBills": [{"id": "BILL-DEMO-001", "threeWayStatus": "Matched", "vendor": "Mysore Silk Co-op"}]},
+    "/api/manufacturing": {"production": [{"id": "JOB-DEMO-001", "product": "Kanchipuram Zari Silk", "stage": "Weaving", "status": "In progress"}], "boms": [{"id": "BOM-DEMO-001", "sku": "SLN-KAN-001", "status": "Active"}], "materialIssues": [{"id": "ISS-DEMO-001", "product": "Mulberry Silk Yarn", "qty": 6, "status": "Posted"}], "jobWorks": [{"id": "JW-DEMO-001", "worker": "Kanchipuram Weavers Guild", "status": "Open"}], "wip": [{"id": "WIP-DEMO-001", "stage": "Zari finishing", "location": "Kanchipuram Workshop"}], "quality": [{"id": "QC-DEMO-001", "status": "Awaiting QC", "product": "Kanchipuram Zari Silk"}]},
+    "/api/logistics": {"invoices": [{"id": "INV-DEMO-001", "customer": "Nila Sarees", "total": 28500, "status": "Outstanding"}], "shipments": [{"id": "SHP-DEMO-001", "tracking": "DEMO12345", "status": "Picking", "destination": "Chennai"}], "receipts": [{"id": "RCT-DEMO-001", "amount": 28500, "status": "Reconciled"}]},
+    "/api/finance": {"receivables": [{"name": "Nila Sarees", "outstanding": 118400}], "payables": [{"vendor": "Mysore Silk Co-op", "value": 126000}], "cash": 92000, "tax": {"input": 32400, "output": 68400}},
+    "/api/banking": {"accounts": ["HDFC Current · 4421"], "transactions": [{"id": "BANK-DEMO-001", "narration": "UPI collection", "amount": 28500, "status": "Unmatched", "direction": "Credit"}], "unmatched": [{"id": "BANK-DEMO-001", "narration": "UPI collection", "amount": 28500, "status": "Unmatched"}]},
+    "/api/ledger": {"journalEntries": [{"id": "JE-DEMO-001", "reference": "INV-DEMO-001", "description": "Sales invoice", "debit": "Accounts receivable", "credit": "Sales revenue", "amount": 28500, "status": "Posted"}], "gstLedger": [{"id": "GST-DEMO-001", "reference": "INV-DEMO-001", "direction": "Output", "tax": 1357, "status": "Ready"}]},
+    "/api/ledger/trial-balance": {"balanced": True, "accounts": [{"account": "Accounts receivable", "debit": 28500, "credit": 0}, {"account": "Sales revenue", "debit": 0, "credit": 28500}]},
+    "/api/masters": {"organisation": {"name": "SLNS Silk House"}, "products": [], "customers": [{"id": "CUS-DEMO-001", "name": "Nila Sarees"}], "vendors": [{"id": "VEN-DEMO-001", "name": "Mysore Silk Co-op"}], "locations": [{"id": "BIN-DEMO-001", "warehouse": "Bengaluru HQ", "bin": "A1"}], "roles": [{"id": "ROLE-OWNER", "name": "Owner / Board", "permissions": "All operations"}]},
+    "/api/audit": [{"id": "AUDIT-DEMO-001", "action": "LOGIN", "entity": "USER", "entityId": "USR-OWNER", "detail": "Local demo workspace access", "user": "SLNS", "occurredAt": "2026-09-14T08:00:00Z"}],
+}
+LOCAL_DATA["/api/masters"]["products"] = LOCAL_DATA["/api/products"]
+
 
 def api_url() -> str:
     return os.getenv("SLNS_API_URL", "").rstrip("/")
@@ -94,7 +117,7 @@ def api_get(path: str):
     """Read a backend resource; return None when the optional backend is offline."""
     base = api_url()
     if not base:
-        return None
+        return LOCAL_DATA.get(path)
     headers = {}
     token = st.session_state.get("token") or os.getenv("SLNS_API_TOKEN")
     if token:
@@ -110,7 +133,11 @@ def api_get(path: str):
 def api_post(path: str, payload: dict):
     base = api_url()
     if not base:
-        return None, "Set SLNS_API_URL to enable live transactions."
+        if path == "/api/auth/login" and str(payload.get("username", "")).strip().lower() == "slns" and payload.get("password") == "slns":
+            return {"token": "local-demo", "user": LOCAL_USER}, ""
+        if st.session_state.get("token") == "local-demo":
+            return {"ok": True, "mode": "local-demo", "transactionId": "DEMO-LOCAL-001"}, ""
+        return None, "Sign in to the SLNS operations workspace."
     headers = {"Content-Type": "application/json"}
     token = st.session_state.get("token") or os.getenv("SLNS_API_TOKEN")
     if token:
@@ -142,12 +169,8 @@ def login_panel():
     if not api_url():
         st.sidebar.markdown('<div class="side-section-label">Customer experience</div>', unsafe_allow_html=True)
         st.sidebar.markdown('<div class="side-section-label" style="margin-top:1.2rem">Staff access</div>', unsafe_allow_html=True)
-        if st.sidebar.button("Operations login →", use_container_width=True, key="operations-login-entry"):
-            st.session_state["operations_login_requested"] = True
-        if st.session_state.get("operations_login_requested"):
-            st.sidebar.info("Connect the operations service with the Streamlit secret `SLNS_API_URL` to sign in and open the internal workspace.")
-        return
-    st.sidebar.markdown('<div class="side-section-label">Staff access</div>', unsafe_allow_html=True)
+    else:
+        st.sidebar.markdown('<div class="side-section-label">Staff access</div>', unsafe_allow_html=True)
     if st.session_state.get("token"):
         user = st.session_state.get("user", {})
         st.sidebar.success(f"Signed in · {user.get('name', 'staff')}")
@@ -157,8 +180,8 @@ def login_panel():
             st.rerun()
         return
     with st.sidebar.form("login"):
-        username = st.text_input("Username", value="SLNS")
-        password = st.text_input("Password", type="password")
+        username = st.text_input("Username", value="SLNS", autocomplete="username")
+        password = st.text_input("Password", type="password", autocomplete="current-password")
         submitted = st.form_submit_button("Sign in")
     if submitted:
         result, error = api_post("/api/auth/login", {"username": username, "password": password})
@@ -362,7 +385,7 @@ def show_craft():
 
 
 login_panel()
-operator = bool(api_url() and (st.session_state.get("token") or os.getenv("SLNS_API_TOKEN")))
+operator = bool(st.session_state.get("token") or os.getenv("SLNS_API_TOKEN"))
 if operator:
     page_names = {"⌂  Control tower": "Control tower", "▦  Inventory": "Inventory", "◌  Orders & commerce": "Orders & commerce", "⇢  Procurement": "Procurement", "◒  Production": "Production", "▸  Logistics": "Logistics", "₹  Finance & GST": "Finance & GST", "◇  Masters & setup": "Masters & setup", "✦  Blueprint coverage": "Blueprint coverage", "✧  Enhanced features": "Enhanced features", "✓  PRD acceptance": "PRD acceptance", "≡  Audit trail": "Audit trail"}
     selected = st.sidebar.radio("Workspace", list(page_names), label_visibility="collapsed")
