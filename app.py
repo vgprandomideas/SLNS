@@ -20,6 +20,22 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
+st.markdown(
+    """
+    <style>
+    @media (max-width: 640px) {
+      [data-testid="stAppViewContainer"] .block-container { padding: 1rem 0.75rem 2rem; }
+      [data-testid="stMetricValue"] { font-size: 1.25rem; }
+      [data-testid="stMetricLabel"] { font-size: 0.72rem; }
+      [data-testid="stDataFrame"] { max-width: 100%; overflow-x: auto; }
+      .stButton > button, .stLinkButton > a { min-height: 2.75rem; width: 100%; }
+      section[data-testid="stSidebar"] .stRadio label { padding: 0.45rem 0; }
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
 
 DEMO = {
     "summary": {
