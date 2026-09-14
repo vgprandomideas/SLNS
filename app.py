@@ -141,6 +141,11 @@ def login_panel():
     st.sidebar.markdown('<div class="side-brand"><div class="side-brand-mark">S</div><div class="side-brand-name">SLNS<small>Silk House</small></div></div>', unsafe_allow_html=True)
     if not api_url():
         st.sidebar.markdown('<div class="side-section-label">Customer experience</div>', unsafe_allow_html=True)
+        st.sidebar.markdown('<div class="side-section-label" style="margin-top:1.2rem">Staff access</div>', unsafe_allow_html=True)
+        if st.sidebar.button("Operations login →", use_container_width=True, key="operations-login-entry"):
+            st.session_state["operations_login_requested"] = True
+        if st.session_state.get("operations_login_requested"):
+            st.sidebar.info("Connect the operations service with the Streamlit secret `SLNS_API_URL` to sign in and open the internal workspace.")
         return
     st.sidebar.markdown('<div class="side-section-label">Staff access</div>', unsafe_allow_html=True)
     if st.session_state.get("token"):
