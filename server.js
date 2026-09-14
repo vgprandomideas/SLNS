@@ -31,9 +31,9 @@ function seedStore() {
   return {
     organisation: { name: "SLNS Silk House", legalEntity: "SLNS Silk House Private Limited", gstin: "29AABCS1234F1ZP", currency: "INR", branches: ["Bengaluru HQ", "Kanchipuram Workshop"] },
     users: [
-      { id: "USR-OWNER", name: "Priya N.", username: "priya", passwordHash: hashPassword("slns-demo-owner"), role: "Owner / Board", permissions: ["*"] },
-      { id: "USR-FINANCE", name: "Arjun Rao", username: "arjun", passwordHash: hashPassword("slns-demo-finance"), role: "CFO / Finance Head", permissions: ["read", "finance:write", "approve:write"] },
-      { id: "USR-WAREHOUSE", name: "Ravi K.", username: "ravi", passwordHash: hashPassword("slns-demo-warehouse"), role: "Warehouse", permissions: ["read", "inventory:write", "production:write"] }
+      { id: "USR-OWNER", name: "Priya N.", username: "priya", passwordHash: hashPassword("slns-demo-owner"), role: "Owner / Board", permissions: ["*"], active: true },
+      { id: "USR-FINANCE", name: "Arjun Rao", username: "arjun", passwordHash: hashPassword("slns-demo-finance"), role: "CFO / Finance Head", permissions: ["read", "finance:write", "approve:write"], active: true },
+      { id: "USR-WAREHOUSE", name: "Ravi K.", username: "ravi", passwordHash: hashPassword("slns-demo-warehouse"), role: "Warehouse", permissions: ["read", "inventory:write", "production:write"], active: true }
     ],
     products: [
       { id: "SKU-KANCHI-001", sku: "SL-KAN-001", name: "Kanchipuram Ruby Zari", collection: "Heritage Gold", category: "Kanchipuram Silk", material: "Mulberry silk", design: "Temple checks", colour: "Ruby", zari: "Pure zari", trueCost: 18400, price: 28900, gstRate: 5, reorderLevel: 3, onHand: 8, reserved: 1, unit: "piece" },
@@ -224,7 +224,7 @@ let store = loadStore();
 if (postgresStore) { const remoteStore = await postgresStore.read(); if (remoteStore) store = { ...store, ...remoteStore }; }
 const sessions = new Map();
 store.products = (store.products || []).map((product) => ({ ...product, designCode: product.designCode || product.sku, border: product.border || "Handwoven contrast", pallu: product.pallu || "Woven pallu", blouseDetails: product.blouseDetails || "Unstitched blouse piece", mrp: product.mrp || product.price, retailPrice: product.retailPrice || product.price, wholesalePrice: product.wholesalePrice || Math.round(product.price * 0.85), barcode: product.barcode || `890${product.sku.replace(/\D/g, "").slice(-9).padStart(9, "0")}`, qr: product.qr || `QR-${product.sku}`, photos: product.photos || [], active: product.active !== false }));
-store.users = (store.users || []).map((user) => ({ ...user, passwordHash: user.passwordHash || hashPassword(demoPasswordFor[user.username] || randomUUID()) }));
+store.users = (store.users || []).map((user) => ({ ...user, active: user.active !== false, passwordHash: user.passwordHash || hashPassword(demoPasswordFor[user.username] || randomUUID()) }));
 for (const domain of ["uploadedDocuments", "paymentIntents", "refunds", "workflowHistory", "integrationEvents", "idempotencyKeys", "customerAccounts"]) store[domain] ||= [];
 const loginAttempts = new Map();
 const storefrontRequests = new Map();
@@ -234,7 +234,7 @@ if (!db.prepare("SELECT 1 FROM meta WHERE key = 'snapshot'").get()) persist();
 const json = (res, status, body) => { res.writeHead(status, { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff", "Referrer-Policy": "same-origin" }); res.end(JSON.stringify(body)); };
 const bad = (res, message) => json(res, 400, { error: message });
 const available = (product) => product.onHand - product.reserved;
-function currentUser(req) { const header = req.headers.authorization || ""; const token = header.startsWith("Bearer ") ? header.slice(7) : ""; const session = sessions.get(token); if (session && session.expiresAt < Date.now()) { sessions.delete(token); return null; } return session; }
+function currentUser(req) { const header = req.headers.authorization || ""; const token = header.startsWith("Bearer ") ? header.slice(7) : ""; const session = sessions.get(token); if (session && session.expiresAt < Date.now()) { sessions.delete(token); return null; } const user = session && store.users.find((candidate) => candidate.id === session.id && candidate.active !== false); return user ? { ...session, ...user } : null; }
 function requireAuth(req, res) { const user = currentUser(req); if (!user) { json(res, 401, { error: "Authentication required" }); return null; } return user; }
 function can(user, permission) { return Boolean(user && (user.permissions?.includes("*") || user.permissions?.includes(permission))); }
 function requirePermission(req, res, permission) { const user = requireAuth(req, res); if (!user) return null; if (!can(user, permission)) { json(res, 403, { error: `Role ${user.role} cannot perform ${permission}` }); return null; } return user; }
@@ -349,10 +349,12 @@ const server = http.createServer(async (req, res) => {
     const payload = await body(req); if (payload === null) return bad(res, "Request body must be valid JSON");
     if (url.pathname === "/api/auth/login") {
       const attempt = loginAttempts.get(payload.username) || { count: 0, blockedUntil: 0 }; if (attempt.blockedUntil > Date.now()) return json(res, 429, { error: "Too many attempts; try again later" });
-      const user = store.users.find((candidate) => candidate.username === payload.username && verifyPassword(payload.password || "", candidate.passwordHash));
-      if (!user) { attempt.count += 1; if (attempt.count >= 5) attempt.blockedUntil = Date.now() + 15 * 60 * 1000; loginAttempts.set(payload.username, attempt); return json(res, 401, { error: "Invalid demo credentials" }); }
-      loginAttempts.delete(payload.username); const token = randomUUID(); const sessionHours = Number(process.env.SESSION_TTL_HOURS || 8); sessions.set(token, { ...user, expiresAt: Date.now() + sessionHours * 60 * 60 * 1000 }); return json(res, 200, { token, user });
+      const username = String(payload.username || "").trim().toLowerCase();
+      const user = store.users.find((candidate) => candidate.username === username && candidate.active !== false && verifyPassword(payload.password || "", candidate.passwordHash));
+      if (!user) { attempt.count += 1; if (attempt.count >= 5) attempt.blockedUntil = Date.now() + 15 * 60 * 1000; loginAttempts.set(payload.username, attempt); return json(res, 401, { error: "Invalid username or password" }); }
+      loginAttempts.delete(username); const token = randomUUID(); const sessionHours = Number(process.env.SESSION_TTL_HOURS || 8); sessions.set(token, { ...user, expiresAt: Date.now() + sessionHours * 60 * 60 * 1000 }); return json(res, 200, { token, user });
     }
+    if (url.pathname === "/api/auth/logout") { const header = req.headers.authorization || ""; const token = header.startsWith("Bearer ") ? header.slice(7) : ""; sessions.delete(token); return json(res, 200, { ok: true }); }
     if (url.pathname === "/api/storefront/orders") {
       const client = req.socket.remoteAddress || "unknown"; const recent = storefrontRequests.get(client) || []; const fresh = recent.filter((timestamp) => Date.now() - timestamp < 60 * 60 * 1000); if (fresh.length >= 30) return json(res, 429, { error: "Storefront rate limit exceeded" }); storefrontRequests.set(client, [...fresh, Date.now()]);
       const product = store.products.find((candidate) => candidate.id === payload.productId); const qty = Number(payload.qty); const customerName = String(payload.customerName || "").trim(); if (!product || !customerName || !Number.isFinite(qty) || qty <= 0 || available(product) < qty) return bad(res, "Choose an available product, customer name and valid quantity");
@@ -367,7 +369,7 @@ const server = http.createServer(async (req, res) => {
       const intent = { id: id("PI").toUpperCase(), orderId: order.id, amount, provider: provider.mode, status: provider.mode === "sandbox" ? "Requires confirmation" : "Created", providerReference: provider.reference || provider.data?.id || null, createdAt: now() };
       store.paymentIntents.unshift(intent); const outbox = enqueue("payment.intent.created", intent.id, "Payment provider", { orderId: order.id, amount }); if (payload.idempotencyKey) store.idempotencyKeys.unshift({ key: payload.idempotencyKey, response: { paymentIntent: intent, outboxId: outbox.id }, createdAt: now() }); audit("CREATE", "PAYMENT_INTENT", intent.id, `Created ${amount} INR for ${order.id}`); persist(); return json(res, 201, { paymentIntent: intent, outboxId: outbox.id });
     }
-    const permission = url.pathname.includes("/actions/approve") ? "approve:write" : url.pathname.includes("/actions/migration") ? "admin:write" : url.pathname.includes("/actions/receipt") || url.pathname.includes("/actions/vendor-payment") || url.pathname.includes("/actions/weaver-advance") || url.pathname.includes("/actions/bank-reconcile") || url.pathname.includes("/actions/three-way-match") || url.pathname.includes("/actions/gst-submit") || url.pathname.includes("/actions/bank-sync") ? "finance:write" : url.pathname.includes("/actions/order") || url.pathname.includes("/actions/invoice") || url.pathname.includes("/actions/dispatch") || url.pathname.includes("/actions/return") || url.pathname.includes("/actions/refund") || url.pathname.includes("/actions/shipment-sync") || url.pathname.includes("/actions/notify") ? "sales:write" : "inventory:write";
+    const permission = url.pathname.includes("/actions/approve") ? "approve:write" : url.pathname.includes("/actions/migration") || url.pathname.includes("/actions/user-") ? "admin:write" : url.pathname.includes("/actions/receipt") || url.pathname.includes("/actions/vendor-payment") || url.pathname.includes("/actions/weaver-advance") || url.pathname.includes("/actions/bank-reconcile") || url.pathname.includes("/actions/three-way-match") || url.pathname.includes("/actions/gst-submit") || url.pathname.includes("/actions/bank-sync") ? "finance:write" : url.pathname.includes("/actions/order") || url.pathname.includes("/actions/invoice") || url.pathname.includes("/actions/dispatch") || url.pathname.includes("/actions/return") || url.pathname.includes("/actions/refund") || url.pathname.includes("/actions/shipment-sync") || url.pathname.includes("/actions/notify") ? "sales:write" : "inventory:write";
     const user = requirePermission(req, res, permission); if (!user) return;
     payload.user ||= user.name;
     if (url.pathname === "/api/actions/receive" || url.pathname === "/api/actions/production") {
@@ -522,6 +524,20 @@ const server = http.createServer(async (req, res) => {
     }
     if (url.pathname === "/api/actions/customer-consent") {
       const customer = store.customers.find((candidate) => candidate.id === payload.customerId || candidate.email === payload.email); if (!customer) return bad(res, "Customer not found"); customer.marketingConsent = Boolean(payload.marketingConsent); customer.consentUpdatedAt = now(); audit("UPDATE", "CUSTOMER_CONSENT", customer.id, `Marketing consent ${customer.marketingConsent ? "granted" : "withdrawn"}`); persist(); return json(res, 200, { id: customer.id, marketingConsent: customer.marketingConsent, consentUpdatedAt: customer.consentUpdatedAt });
+    }
+    if (url.pathname === "/api/actions/user-create") {
+      const username = String(payload.username || "").trim().toLowerCase(); const password = String(payload.password || ""); const name = String(payload.name || "").trim();
+      const validRoles = ["Owner / Board", "CFO / Finance Head", "Warehouse", "Auditor", "Sales", "Production"];
+      if (!/^[a-z0-9._-]{3,40}$/.test(username) || !name || password.length < 12 || !validRoles.includes(payload.role)) return bad(res, "Provide a name, valid username, role and password of at least 12 characters");
+      if (store.users.some((candidate) => candidate.username === username)) return bad(res, "That username is already in use");
+      const permissions = Array.isArray(payload.permissions) ? payload.permissions.filter((permission) => typeof permission === "string").slice(0, 30) : ["read"];
+      const created = { id: id("USR").toUpperCase(), name, username, passwordHash: hashPassword(password), role: payload.role, permissions, active: true, createdAt: now() };
+      store.users.push(created); audit("CREATE", "USER", created.id, `Created ${created.username} · ${created.role}`); persist(); const { passwordHash, ...safeUser } = created; return json(res, 201, safeUser);
+    }
+    if (url.pathname === "/api/actions/user-disable") {
+      const target = store.users.find((candidate) => candidate.id === payload.userId || candidate.username === payload.username);
+      if (!target) return bad(res, "User not found"); if (target.id === user.id) return bad(res, "You cannot disable your own active session");
+      target.active = false; target.disabledAt = now(); audit("UPDATE", "USER", target.id, `Disabled ${target.username}`); persist(); return json(res, 200, { id: target.id, username: target.username, active: false });
     }
     if (url.pathname === "/api/actions/migration-import") {
       if (!payload.data || typeof payload.data !== "object") return bad(res, "Migration data object is required");

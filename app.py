@@ -143,6 +143,14 @@ def login_panel():
         st.sidebar.markdown('<div class="side-section-label">Customer experience</div>', unsafe_allow_html=True)
         return
     st.sidebar.markdown('<div class="side-section-label">Staff access</div>', unsafe_allow_html=True)
+    if st.session_state.get("token"):
+        user = st.session_state.get("user", {})
+        st.sidebar.success(f"Signed in · {user.get('name', 'staff')}")
+        if st.sidebar.button("Sign out", use_container_width=True):
+            st.session_state.pop("token", None)
+            st.session_state.pop("user", None)
+            st.rerun()
+        return
     with st.sidebar.form("login"):
         username = st.text_input("Username", value="priya")
         password = st.text_input("Password", type="password")
@@ -165,16 +173,16 @@ def show_dashboard():
     elif not api_url():
         st.warning("Demo mode: configure `SLNS_API_URL` to use live relational data and transactions.")
 
-    summary = live_or_demo("/api/reports", "summary")
+    summary = live_or_demo("/api/summary", "summary")
     if not isinstance(summary, dict):
         summary = DEMO["summary"]
     columns = st.columns(6)
     metrics = [
-        ("Sales", f"₹{summary.get('sales', 0):,.0f}"),
+        ("Sales", f"₹{summary.get('salesValue', summary.get('sales', 0)):,.0f}"),
         ("Collections", f"₹{summary.get('collections', 0):,.0f}"),
         ("Inventory", f"₹{summary.get('inventoryValue', 0):,.0f}"),
-        ("WIP", f"₹{summary.get('wipValue', 0):,.0f}"),
-        ("Margin", f"{summary.get('contributionMargin', 0):.1f}%"),
+        ("WIP", f"₹{summary.get('wip', summary.get('wipValue', 0)):,.0f}"),
+        ("Margin", f"{summary.get('margin', summary.get('contributionMargin', 0)):.1f}%"),
         ("Open orders", str(summary.get("openOrders", 0))),
     ]
     for column, (label, value) in zip(columns, metrics):
@@ -196,11 +204,15 @@ def show_inventory():
     st.dataframe(products, use_container_width=True, hide_index=True)
     st.subheader("Receive stock")
     with st.form("receive"):
-        sku = st.selectbox("SKU", [item.get("sku") for item in products])
+        product_options = [item for item in products if item.get("id")]
+        selected_product = st.selectbox("SKU", product_options, format_func=lambda item: f"{item.get('sku', item.get('name'))} · {item.get('name', '')}") if product_options else None
         quantity = st.number_input("Quantity", min_value=1, value=1, step=1)
         submitted = st.form_submit_button("Post receipt")
     if submitted:
-        result, error = api_post("/api/actions/receive", {"sku": sku, "quantity": quantity, "type": "Finished goods"})
+        if not selected_product:
+            st.warning("Connect the backend to post a live receipt.")
+            return
+        result, error = api_post("/api/actions/receive", {"productId": selected_product["id"], "qty": quantity, "note": "Streamlit inventory receipt"})
         if result:
             st.success("Receipt posted to the Node backend.")
             st.json(result)
@@ -212,7 +224,107 @@ def show_orders():
     st.title("Orders & commerce")
     orders = live_or_demo("/api/orders", "orders")
     st.dataframe(orders, use_container_width=True, hide_index=True)
-    st.link_button("Open customer storefront", f"{api_url()}/storefront.html" if api_url() else "http://localhost:3000/storefront.html")
+    st.link_button("Open customer storefront", f"{api_url()}/" if api_url() else "/")
+
+
+def table_section(title, rows, key):
+    st.subheader(title)
+    if isinstance(rows, list) and rows:
+        st.dataframe(rows, use_container_width=True, hide_index=True, key=key)
+    else:
+        st.caption("No records yet")
+
+
+def show_procurement():
+    st.title("Procurement & vendors")
+    data = api_get("/api/procurement-full") or {}
+    columns = st.columns(4)
+    for column, label, key in zip(columns, ["Requisitions", "RFQs", "Quotations", "Vendor bills"], ["requisitions", "rfqs", "quotations", "vendorBills"]):
+        column.metric(label, len(data.get(key, [])))
+    for key, label in [("requisitions", "Purchase requisitions"), ("rfqs", "Requests for quotation"), ("quotations", "Vendor quotations"), ("grns", "Goods receipts"), ("vendorBills", "Vendor bills / 3-way match")]:
+        table_section(label, data.get(key, []), f"proc-{key}")
+
+
+def show_production():
+    st.title("Production & job work")
+    data = api_get("/api/manufacturing") or {}
+    columns = st.columns(4)
+    for column, label, key in zip(columns, ["Production orders", "BOMs", "Job work", "WIP records"], ["production", "boms", "jobWorks", "wip"]):
+        column.metric(label, len(data.get(key, [])))
+    for key, label in [("production", "Production orders"), ("boms", "Bills of material"), ("materialIssues", "Material issues"), ("jobWorks", "Job-work ledger"), ("wip", "Work in progress"), ("quality", "Quality inspections")]:
+        table_section(label, data.get(key, []), f"prod-{key}")
+
+
+def show_logistics():
+    st.title("Logistics & fulfilment")
+    data = api_get("/api/logistics") or {}
+    columns = st.columns(3)
+    for column, label, key in zip(columns, ["Invoices", "Shipments", "Receipts"], ["invoices", "shipments", "receipts"]):
+        column.metric(label, len(data.get(key, [])))
+    for key, label in [("invoices", "Invoice register"), ("shipments", "Shipment queue"), ("receipts", "Customer receipts")]:
+        table_section(label, data.get(key, []), f"logistics-{key}")
+
+
+def show_finance():
+    st.title("Finance, GST & banking")
+    finance = api_get("/api/finance") or {}; banking = api_get("/api/banking") or {}; ledger = api_get("/api/ledger") or {}; trial = api_get("/api/ledger/trial-balance") or {}
+    columns = st.columns(4)
+    columns[0].metric("Cash", f"₹{finance.get('cash', 0):,.0f}")
+    columns[1].metric("Receivables", f"₹{sum(item.get('outstanding', 0) for item in finance.get('receivables', [])):,.0f}")
+    columns[2].metric("Payables", f"₹{sum(item.get('value', 0) for item in finance.get('payables', [])):,.0f}")
+    columns[3].metric("Trial balance", "Balanced" if trial.get("balanced") else "Review")
+    table_section("Unmatched bank transactions", banking.get("unmatched", []), "finance-bank")
+    table_section("General ledger postings", ledger.get("journalEntries", []), "finance-ledger")
+    table_section("GST ledger", ledger.get("gstLedger", []), "finance-gst")
+    table_section("Trial balance by account", trial.get("accounts", []), "finance-trial")
+
+
+def show_masters():
+    st.title("Masters & system setup")
+    data = api_get("/api/masters") or {}
+    st.subheader(data.get("organisation", {}).get("name", "SLNS Silk House"))
+    columns = st.columns(4)
+    for column, label, key in zip(columns, ["Products", "Customers", "Vendors", "Locations"], ["products", "customers", "vendors", "locations"]):
+        column.metric(label, len(data.get(key, [])))
+    for key, label in [("products", "Product master"), ("customers", "Customer master"), ("vendors", "Vendor master"), ("locations", "Warehouse locations"), ("roles", "Roles and permissions")]:
+        table_section(label, data.get(key, []), f"master-{key}")
+
+
+def show_blueprint():
+    st.title("Blueprint coverage")
+    data = api_get("/api/blueprint") or {}
+    st.caption("Internal operations reference — visible only after staff authentication.")
+    table_section("Operating modules", data.get("modules", []), "blueprint-modules")
+    st.subheader("Canonical business flow")
+    st.write("  →  ".join(data.get("canonicalFlow", [])))
+    table_section("Implementation roadmap", [{"phase": index + 1, "name": value} for index, value in enumerate(data.get("roadmap", []))], "blueprint-roadmap")
+
+
+def show_enhanced():
+    st.title("Enhanced capabilities")
+    data = api_get("/api/enhancements") or {}
+    columns = st.columns(4)
+    for column, label, key in zip(columns, ["Pieces", "Weaver ledgers", "POS queue", "Risks"], ["pieces", "weaverLedgers", "posSyncQueue", "risks"]):
+        column.metric(label, len(data.get(key, [])))
+    for key, label in [("pieces", "Piece-level QR traceability"), ("weaverLedgers", "Weaver ledger"), ("channels", "Channel economics"), ("seasonality", "Seasonality plan"), ("risks", "Risk register"), ("successTests", "Success tests")]:
+        table_section(label, data.get(key, []), f"enhanced-{key}")
+
+
+def show_prd():
+    st.title("PRD acceptance")
+    data = api_get("/api/prd") or {}
+    acceptance = data.get("acceptance", [])
+    ready = sum(item.get("status") == "Ready" for item in acceptance)
+    st.metric("Acceptance areas ready", f"{ready}/{len(acceptance)}")
+    table_section("Acceptance criteria", acceptance, "prd-acceptance")
+    for key, label in [("procurement", "Procurement records"), ("manufacturing", "Manufacturing records"), ("commercial", "Commercial controls"), ("banking", "Banking controls"), ("experience", "Experience records")]:
+        st.subheader(label)
+        st.json(data.get(key, {}))
+
+
+def show_audit():
+    st.title("Audit trail")
+    table_section("Immutable event history", api_get("/api/audit") or [], "audit-events")
 
 
 def show_collection():
@@ -247,7 +359,7 @@ def show_craft():
 login_panel()
 operator = bool(api_url() and (st.session_state.get("token") or os.getenv("SLNS_API_TOKEN")))
 if operator:
-    page_names = {"⌂  Control tower": "Control tower", "▦  Inventory": "Inventory", "◌  Orders & commerce": "Orders & commerce"}
+    page_names = {"⌂  Control tower": "Control tower", "▦  Inventory": "Inventory", "◌  Orders & commerce": "Orders & commerce", "⇢  Procurement": "Procurement", "◒  Production": "Production", "▸  Logistics": "Logistics", "₹  Finance & GST": "Finance & GST", "◇  Masters & setup": "Masters & setup", "✦  Blueprint coverage": "Blueprint coverage", "✧  Enhanced features": "Enhanced features", "✓  PRD acceptance": "PRD acceptance", "≡  Audit trail": "Audit trail"}
     selected = st.sidebar.radio("Workspace", list(page_names), label_visibility="collapsed")
     page = page_names[selected]
 else:
@@ -261,6 +373,24 @@ elif page == "Inventory":
     show_inventory()
 elif page == "Orders & commerce":
     show_orders()
+elif page == "Procurement":
+    show_procurement()
+elif page == "Production":
+    show_production()
+elif page == "Logistics":
+    show_logistics()
+elif page == "Finance & GST":
+    show_finance()
+elif page == "Masters & setup":
+    show_masters()
+elif page == "Blueprint coverage":
+    show_blueprint()
+elif page == "Enhanced features":
+    show_enhanced()
+elif page == "PRD acceptance":
+    show_prd()
+elif page == "Audit trail":
+    show_audit()
 elif page == "Silk collection":
     show_collection()
 else:
