@@ -385,22 +385,132 @@ def show_audit():
 
 
 def show_collection():
+    st.session_state.setdefault("consumer_cart", [])
+    st.session_state.setdefault("consumer_pending_payment", None)
+    st.session_state.setdefault("consumer_confirmation", None)
     st.markdown('<div class="store-kicker">SLNS SILK HOUSE · THE COLLECTION</div>', unsafe_allow_html=True)
     st.title("Made to be remembered.")
-    st.write("Hand-finished silk sarees with one digital thread from loom to your door.")
-    st.markdown("### The current edit")
+    st.write("Choose a hand-finished silk, add it to your bag and take it from loom to doorstep in a few calm steps.")
     products = api_get("/api/storefront/products") or [item for item in DEMO["products"] if item["category"] != "Raw material"]
+    products = [{**product, "id": product.get("id") or f"STREAM-{index + 1:03d}", "available": product.get("available", product.get("onHand", 0) - product.get("reserved", 0))} for index, product in enumerate(products)]
     columns = st.columns(min(3, max(1, len(products))))
     tones = ["#6d1e2b", "#102c46", "#285745"]
     for index, product in enumerate(products):
         with columns[index % len(columns)]:
             colour = tones[index % len(tones)]
-            st.markdown(
-                f"<div class='stream-product' style='--tone:{colour}'><div class='stream-swatch'><span>{product.get('name', 'Silk').split()[0][0]}{product.get('name', 'House').split()[-1][0]}</span></div><div class='stream-meta'><small>{product.get('sku', 'SLNS')}</small><h3>{product.get('name', 'Silk house piece')}</h3><p>{product.get('collection', 'The edit')} · QR traceable</p><strong>₹{int(product.get('price', 0)):,}</strong></div></div>",
-                unsafe_allow_html=True,
-            )
-            if st.button("Reserve this piece", key=f"reserve-{index}", use_container_width=True):
-                st.info("Reservations are completed from the connected SLNS storefront.")
+            st.markdown(f"<div class='stream-product' style='--tone:{colour}'><div class='stream-swatch'><span>{product.get('name', 'Silk').split()[0][0]}{product.get('name', 'House').split()[-1][0]}</span></div><div class='stream-meta'><small>{product.get('sku', 'SLNS')}</small><h3>{product.get('name', 'Silk house piece')}</h3><p>{product.get('collection', 'The edit')} · QR traceable</p><strong>₹{int(product.get('price', 0)):,}</strong></div></div>", unsafe_allow_html=True)
+            if st.button("Add to bag", key=f"add-bag-{product['id']}", use_container_width=True, disabled=product["available"] <= 0):
+                existing = next((item for item in st.session_state["consumer_cart"] if item["productId"] == product["id"]), None)
+                if existing:
+                    existing["qty"] = min(existing["qty"] + 1, product["available"])
+                else:
+                    st.session_state["consumer_cart"].append({"productId": product["id"], "product": product, "qty": 1})
+                st.toast(f"{product['name']} added to your bag")
+                st.rerun()
+
+    confirmation = st.session_state.get("consumer_confirmation")
+    if confirmation:
+        st.markdown("### Your order is confirmed")
+        st.success(f"{confirmation['message']} We sent the details to {confirmation['email']}.")
+        for order in confirmation["orders"]:
+            st.markdown(f"**{order['orderId']}** · {order['status']} · ₹{int(order['amount']):,}")
+        with st.form("streamlit-track-order"):
+            track_email = st.text_input("Check order status with your email", value=confirmation["email"])
+            track_submitted = st.form_submit_button("Track this order")
+        if track_submitted:
+            if api_url():
+                order = confirmation["orders"][0]
+                tracked = api_get(f"/api/storefront/order-status?orderId={order['orderId']}&email={track_email}")
+                st.info(f"Current status: {tracked.get('status', 'Not found')}" if tracked else "Order not found. Check the order email.")
+            else:
+                st.info("Current status: Confirmed · Your silk house order is in the fulfilment queue.")
+        if st.button("Continue shopping", key="streamlit-continue-shopping"):
+            st.session_state["consumer_confirmation"] = None
+            st.rerun()
+        return
+
+    pending = st.session_state.get("consumer_pending_payment")
+    if pending:
+        st.markdown("### Step 2 · Complete your payment")
+        st.info(f"Secure payment for {', '.join(order['orderId'] for order in pending['orders'])} · ₹{int(sum(item['amount'] for item in pending['payments'])):,}")
+        with st.form("streamlit-payment"):
+            payment_method = st.radio("Payment method", ["UPI", "Card", "Net banking"], horizontal=True)
+            reference = st.text_input("Payment reference", placeholder="UPI ID or card reference")
+            payment_submitted = st.form_submit_button("Pay securely")
+        if payment_submitted:
+            if not reference.strip():
+                st.error("Enter the payment reference to continue.")
+                return
+            if api_url():
+                for intent in pending["payments"]:
+                    result, error = api_post("/api/storefront/payment-confirm", {"paymentIntentId": intent["id"], "email": pending["payload"]["email"], "paymentMethod": payment_method, "reference": reference})
+                    if not result:
+                        st.error(error or "Payment confirmation failed")
+                        return
+            orders = [{**order, "status": "Confirmed"} for order in pending["orders"]]
+            st.session_state["consumer_pending_payment"] = None
+            st.session_state["consumer_confirmation"] = {"orders": orders, "email": pending["payload"]["email"], "message": "Payment captured."}
+            st.rerun()
+        return
+
+    cart = st.session_state["consumer_cart"]
+    if not cart:
+        st.info("Your silk bag is empty. Add a piece above to begin checkout.")
+        return
+    st.markdown("### Step 1 · Your silk bag")
+    total = sum(item["product"].get("price", 0) * item["qty"] for item in cart)
+    for item in cart:
+        left, middle, right = st.columns([3, 1, 1])
+        left.markdown(f"**{item['product'].get('name')}**  \n{item['product'].get('sku')} · ₹{int(item['product'].get('price', 0)):,}")
+        middle.write(f"Qty {item['qty']}")
+        if right.button("Remove", key=f"remove-{item['productId']}"):
+            st.session_state["consumer_cart"] = [entry for entry in cart if entry["productId"] != item["productId"]]
+            st.rerun()
+    st.markdown(f"**Collection total: ₹{int(total):,}**")
+    with st.form("streamlit-checkout"):
+        st.markdown("#### Delivery details")
+        customer_name = st.text_input("Full name", placeholder="Your name")
+        email = st.text_input("Email", placeholder="you@example.com")
+        phone = st.text_input("Phone", placeholder="10-digit mobile number")
+        address = st.text_area("Delivery address", placeholder="House number, street, area")
+        city, pincode = st.columns(2)
+        city_value = city.text_input("City")
+        pincode_value = pincode.text_input("PIN code", placeholder="560001")
+        payment_mode = st.radio("Payment", ["Prepaid", "COD"], horizontal=True, help="Prepaid opens a secure payment confirmation step. COD reserves the piece for delivery.")
+        checkout_submitted = st.form_submit_button("Place order", type="primary")
+    if checkout_submitted:
+        required_values = [customer_name, email, phone, address, city_value, pincode_value]
+        if not all(str(value).strip() for value in required_values):
+            st.error("Please complete your delivery details before placing the order.")
+            return
+        payload = {"customerName": customer_name, "email": email, "phone": phone, "address": address, "city": city_value, "pincode": pincode_value, "paymentMode": payment_mode, "marketingConsent": False}
+        orders, payments = [], []
+        if api_url():
+            for item in cart:
+                order, error = api_post("/api/storefront/orders", {**payload, "productId": item["productId"], "qty": item["qty"]})
+                if not order:
+                    st.error(error or "Order could not be created")
+                    return
+                orders.append(order)
+                if payment_mode == "Prepaid":
+                    intent, error = api_post("/api/storefront/payment-intent", {"orderId": order["orderId"], "amount": order["amount"], "email": email, "idempotencyKey": f"streamlit-payment-{order['orderId']}"})
+                    if not intent:
+                        st.error(error or "Payment could not be started")
+                        return
+                    payments.append(intent["paymentIntent"])
+        else:
+            for index, item in enumerate(cart, start=1):
+                order_id = f"WEB-DEMO-{len(st.session_state.get('consumer_orders', [])) + index:04d}"
+                orders.append({"orderId": order_id, "amount": item["product"].get("price", 0) * item["qty"], "status": "Payment pending" if payment_mode == "Prepaid" else "Reserved"})
+                if payment_mode == "Prepaid":
+                    payments.append({"id": f"PI-DEMO-{order_id}", "amount": orders[-1]["amount"]})
+        st.session_state["consumer_orders"] = st.session_state.get("consumer_orders", []) + orders
+        st.session_state["consumer_cart"] = []
+        if payment_mode == "Prepaid":
+            st.session_state["consumer_pending_payment"] = {"orders": orders, "payments": payments, "payload": payload}
+        else:
+            st.session_state["consumer_confirmation"] = {"orders": orders, "email": email, "message": "Your COD order is reserved."}
+        st.rerun()
 
 
 def show_craft():
